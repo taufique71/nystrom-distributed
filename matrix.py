@@ -1,62 +1,103 @@
-import torch  
-import torch.distributed as torchdist  
+from mpi4py import MPI
 from communicator import ProcGrid
+import numpy as np
 
 class ParMat:
     def __init__(self, m, n, grid, frontFace):
         self.nRowGlobal = m
         self.nColGlobal = n
+        self.nRowLocal = None
+        self.nColLocal = None
         self.grid = grid
         self.frontFace = frontFace
+        self.localRowStart = None
+        self.localColStart = None
+        self.localRowStart = None
+        self.localColStart = None
+        self.localMat = None
         
         if self.frontFace == 'A':
-            # Rows
+            # Distribute matrix rows
             self.nRowLocal = int(self.nRowGlobal / self.grid.nProcRow)
-            if self.grid.rankInColGroup == self.grid.nProcRow-1:
+            self.localRowStart = int(self.nRowGlobal / self.grid.nProcRow) * self.grid.rankInColWorld
+            if self.grid.rankInColWorld == self.grid.nProcRow-1:
                 # Last process in a column group would get different treatment
-                self.nRowLocal = self.nRowGlobal - int(self.nRowGlobal / self.grid.nProcRow) * self.grid.rankInColGroup
+                self.nRowLocal = self.nRowGlobal - int(self.nRowGlobal / self.grid.nProcRow) * self.grid.rankInColWorld
 
-            # Columns
+            # Distribute matrix columns
+            self.localColStart = int(self.nColGlobal / self.grid.nProcCol) * self.grid.rankInRowWorld
             self.nColLocal = int(self.nColGlobal / self.grid.nProcCol)
-            if self.grid.rankInRowGroup == self.grid.nProcCol-1:
+            if self.grid.rankInRowWorld == self.grid.nProcCol-1:
                 # Last process in a row group would get different treatment
-                self.nColLocal = self.nColGlobal - int(self.nColGlobal / self.grid.nProcCol) * self.grid.rankInRowGroup
+                self.nColLocal = self.nColGlobal - int(self.nColGlobal / self.grid.nProcCol) * self.grid.rankInRowWorld
 
-            # Further distribute the columns to fibers
-            if self.grid.rankInFibGroup < self.grid.nProcFib-1:
+            # Further distribute matrix columns to fibers
+            self.localColStart = self.localColStart + int(self.nColLocal / self.grid.nProcFib) * self.grid.rankInFibWorld
+            if self.grid.rankInFibWorld < self.grid.nProcFib-1:
                 self.nColLocal = int(self.nColLocal / self.grid.nProcFib)
-            elif self.grid.rankInFibGroup == self.grid.nProcFib-1:
+            elif self.grid.rankInFibWorld == self.grid.nProcFib-1:
                 # Treat the last process in the fiber differently
-                # x = self.nColLocal
-                self.nColLocal = self.nColLocal - int(self.nColLocal / self.grid.nProcFib) * self.grid.rankInFibGroup
-
+                self.nColLocal = self.nColLocal - int(self.nColLocal / self.grid.nProcFib) * self.grid.rankInFibWorld
 
         elif self.frontFace == 'B':
             # Now grid columns become equivalent to grid rows, grid fibers become equivalent to grid columns and grid rows become equivalent to grid fibers
-            # Rows
+            # Distribute matrix rows
             self.nRowLocal = int(self.nRowGlobal / self.grid.nProcCol)
-            if self.grid.rankInRowGroup == self.grid.nProcCol-1:
+            self.localRowStart = int(self.nRowGlobal / self.grid.nProcCol) * self.grid.rankInRowWorld
+            if self.grid.rankInRowWorld == self.grid.nProcCol-1:
                 # Last process in a column group would get different treatment
-                self.nRowLocal = self.nRowGlobal - int(self.nRowGlobal / self.grid.nProcCol) * self.grid.rankInRowGroup
+                self.nRowLocal = self.nRowGlobal - int(self.nRowGlobal / self.grid.nProcCol) * self.grid.rankInRowWorld
 
-            # Columns
+            # Distribute matrix columns
+            self.localColStart = int(self.nColGlobal / self.grid.nProcFib) * self.grid.rankInFibWorld
             self.nColLocal = int(self.nColGlobal / self.grid.nProcFib)
-            if self.grid.rankInFibGroup == self.grid.nProcFib-1:
+            if self.grid.rankInFibWorld == self.grid.nProcFib-1:
                 # Last process in a row group would get different treatment
-                self.nColLocal = self.nColGlobal - int(self.nColGlobal / self.grid.nProcFib) * self.grid.rankInFibGroup
+                self.nColLocal = self.nColGlobal - int(self.nColGlobal / self.grid.nProcFib) * self.grid.rankInFibWorld
 
-            # Further distribute the columns to grid rows
-            if self.grid.rankInColGroup < self.grid.nProcRow-1:
+            # Further distribute matrix columns to grid fibers
+            self.localColStart = self.localColStart + int(self.nColLocal / self.grid.nProcRow) * self.grid.rankInColWorld
+            if self.grid.rankInColWorld < self.grid.nProcRow-1:
                 self.nColLocal = int(self.nColLocal / self.grid.nProcRow)
-            elif self.grid.rankInColGroup == self.grid.nProcRow-1:
+            elif self.grid.rankInColWorld == self.grid.nProcRow-1:
                 # Treat the last process in the fiber differently
-                # x = self.nColLocal
-                self.nColLocal = self.nColLocal - int(self.nColLocal / self.grid.nProcRow) * self.grid.rankInColGroup
+                self.nColLocal = self.nColLocal - int(self.nColLocal / self.grid.nProcRow) * self.grid.rankInColWorld
 
-        # elif self.frontFace == 'C':
-            # self.nRowLocal = self.nRowGlobal / self.grid.nProcRow
-            # self.nColLocal = self.nColGlobal / self.grid.nProcFib
+        elif self.frontFace == 'C':
+            # Now grid fibers become equivalent to grid columns whole grid rows stay equivalent to grid rows.
+            # Distribute matrix rows
+            self.nRowLocal = int(self.nRowGlobal / self.grid.nProcRow)
+            self.localRowStart = int(self.nRowGlobal / self.grid.nProcRow) * self.grid.rankInColWorld
+            if self.grid.rankInColWorld == self.grid.nProcRow-1:
+                self.nRowLocal = self.nRowGlobal - int(self.nRowGlobal / self.grid.nProcRow) * self.grid.rankInColWorld
+
+            # Distribute matrix columns
+            self.localColStart = int(self.nColGlobal / self.grid.nProcFib) * self.grid.rankInFibWorld
+            self.nColLocal = int(self.nColGlobal / self.grid.nProcFib)
+            if self.grid.rankInFibWorld == self.grid.nProcFib-1:
+                self.nColLocal = self.nColGlobal - int(self.nColGlobal / self.grid.nProcFib) * self.grid.rankInFibWorld
+
+            # Further distribute matrix columns to grid fibers
+            self.localColStart = self.localColStart + int(self.nColLocal / self.grid.nProcCol) * self.grid.rankInRowWorld
+            if self.grid.rankInRowWorld < self.grid.nProcCol-1:
+                self.nColLocal = int(self.nColLocal / self.grid.nProcCol)
+            elif self.grid.rankInRowWorld == self.grid.nProcCol-1:
+                # Treat the last process in the fiber differently
+                self.nColLocal = self.nColLocal - int(self.nColLocal / self.grid.nProcCol) * self.grid.rankInRowWorld
 
         # print(f"globalrank = {self.grid.myrank}, row_rank={self.grid.rowRank}, col_rank={self.grid.colRank}, fib_rank={self.grid.fibRank}, local_mat={self.nRowLocal}x{self.nColLocal}")
+
+    def generate(self, dtype=np.int32):
+        self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+        for idxRowLocal in range(0, self.nRowLocal):
+            for idxColLocal in range(0, self.nColLocal):
+                idxRowGlobal = self.localRowStart + idxRowLocal
+                idxColGlobal = self.localColStart + idxColLocal
+                self.localMat[idxRowLocal,idxColLocal] = idxRowGlobal * self.nColGlobal + idxColGlobal
+        # if (self.grid.myrank == 4):
+            # print(self.localMat.shape)
+            # print(self.localMat)
+
+        
 
 
