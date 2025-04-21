@@ -1,7 +1,5 @@
 from mpi4py import MPI
 import numpy as np
-# import torch  
-# import torch.distributed as torchdist  
 
 class ProcGrid:
     def __init__(self, nProcRow, nProcCol, nProcFib):

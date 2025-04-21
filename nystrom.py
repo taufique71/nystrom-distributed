@@ -5,66 +5,53 @@ from mpi4py import MPI
 import numpy as np
 from communicator import ProcGrid
 from matrix import ParMat
+from utils import *
 
-def npDtypeToMpiDtype(npType):
-    # Translate numpy datatypes to mpi4py datatypes
-    # Assumes same datatype is being used for both A, B and C
-    # Assumes only 32 bit or 64 bit integers or floating point numbers would be used
-    npDtype = A.localMat.dtype
-    mpiDtype = None
-    if npDtype == np.int32:
-        mpiDtype = MPI.INT
-    elif npDtype == np.int64:
-        mpiDtype = MPI.LONG
-    elif npDtype == np.float32:
-        mpiDtype = MPI.FLOAT
-    elif npDtype == np.float64:
-        mpiDtype = MPI.DOUBLE
-    return mpiDtype
+# def allGather(M, world):
+    # # Gather local copies of the distributed matrix M
+    # # Concatenates the copies along the column and return the concatenated copy
+    # # All matrices are stored in column major order in Fortran
+    # # Assumes same number of matrix rows in all processes
+    # npDtype = M.localMat.dtype
+    # mpiDtype = npDtypeToMpiDtype(npDtype)
 
-def allGather(M, world):
-    # Gather local copies of the distributed matrix M
-    # Concatenates the copies along the column and return the concatenated copy
-    # All matrices are stored in column major order in Fortran
-    # Assumes same number of matrix rows in all processes
-    npDtype = M.localMat.dtype
-    mpiDtype = npDtypeToMpiDtype(npDtype)
+    # rankInWorld = world.Get_rank()
 
-    rankInWorld = world.Get_rank()
+    # nColToSend = np.array(M.nColLocal, dtype=npDtype)
+    # nColToRecv = np.zeros(world.Get_size(), dtype=npDtype)
+    # world.Allgather([nColToSend, mpiDtype], [nColToRecv, mpiDtype])
+    # nValToRecv = M.nRowLocal * nColToRecv # Multiplying all entries with number of local rows would give the number of entries
+    # recvDispls = np.zeros(world.Get_size() + 1, dtype=npDtype) # One extra entry because our prefix sum would start from 0 as initial entry
+    # np.cumsum(nValToRecv, out=recvDispls[1:])
+    # targetM = np.zeros(recvDispls[-1], dtype=npDtype).reshape((M.nRowLocal, np.sum(nColToRecv)), order='F')
 
-    nColToSend = np.array(M.nColLocal, dtype=npDtype)
-    nColToRecv = np.zeros(world.Get_size(), dtype=npDtype)
-    world.Allgather([nColToSend, mpiDtype], [nColToRecv, mpiDtype])
-    nValToRecv = M.nRowLocal * nColToRecv # Multiplying all entries with number of local rows would give the number of entries
-    recvDispls = np.zeros(world.Get_size() + 1, dtype=npDtype) # One extra entry because our prefix sum would start from 0 as initial entry
-    np.cumsum(nValToRecv, out=recvDispls[1:])
-    targetM = np.zeros(recvDispls[-1], dtype=npDtype).reshape((M.nRowLocal, np.sum(nColToRecv)), order='F')
+    # world.Allgatherv([M.localMat, M.nColLocal*M.nRowLocal, mpiDtype], [targetM, nValToRecv, recvDispls[:-1], mpiDtype])
+    # return targetM
 
-    world.Allgatherv([M.localMat, M.nColLocal*M.nRowLocal, mpiDtype], [targetM, nValToRecv, recvDispls[:-1], mpiDtype])
-    return targetM
 
-def reduceScatter(M, world):
-    # Modifies the contents of M matrix
-    # Split the local matrix, redistributes the chunks of M along the world and performs reduction
-    npDtype = M.localMat.dtype
-    mpiDtype = npDtypeToMpiDtype(npDtype)
 
-    rankInWorld = world.Get_rank()
+# def reduceScatter(M, world):
+    # # Modifies the contents of M matrix
+    # # Split the local matrix, redistributes the chunks of M along the world and performs reduction
+    # npDtype = M.localMat.dtype
+    # mpiDtype = npDtypeToMpiDtype(npDtype)
 
-    ## Gather number of columns to send to each process
-    nColToSend = np.array(M.nColLocal, dtype=npDtype)
-    nColToRecv = np.zeros(world.Get_size(), dtype=npDtype) 
-    world.Allgather([nColToSend, mpiDtype], [nColToRecv, mpiDtype])
-    nValToRecv = M.nRowLocal * nColToRecv
-    splitLocs = np.zeros(world.Get_size() + 1, dtype=npDtype)
-    np.cumsum(nColToRecv, out=splitLocs[1:])
-    targetM = np.zeros((M.nRowLocal, nColToRecv[rankInWorld]), dtype=npDtype, order='F')
+    # rankInWorld = world.Get_rank()
 
-    # Supports vector version even though there is no `v` suffix. Similar case in C API
-    # https://mpi4py.readthedocs.io/en/stable/reference/mpi4py.MPI.Comm.html#mpi4py.MPI.Comm.Reduce_scatter
-    world.Reduce_scatter([M.localMat, mpiDtype], [targetM, nValToRecv[rankInWorld], mpiDtype], nValToRecv, op=MPI.SUM)
+    # ## Gather number of columns to send to each process
+    # nColToSend = np.array(M.nColLocal, dtype=npDtype)
+    # nColToRecv = np.zeros(world.Get_size(), dtype=npDtype) 
+    # world.Allgather([nColToSend, mpiDtype], [nColToRecv, mpiDtype])
+    # nValToRecv = M.nRowLocal * nColToRecv
+    # splitLocs = np.zeros(world.Get_size() + 1, dtype=npDtype)
+    # np.cumsum(nColToRecv, out=splitLocs[1:])
+    # targetM = np.zeros((M.nRowLocal, nColToRecv[rankInWorld]), dtype=npDtype, order='F')
 
-    M.localMat = targetM
+    # # Supports vector version even though there is no `v` suffix. Similar case in C API
+    # # https://mpi4py.readthedocs.io/en/stable/reference/mpi4py.MPI.Comm.html#mpi4py.MPI.Comm.Reduce_scatter
+    # world.Reduce_scatter([M.localMat, mpiDtype], [targetM, nValToRecv[rankInWorld], mpiDtype], nValToRecv, op=MPI.SUM)
+
+    # M.localMat = targetM
 
 def matmul(A, B):
     assert(A.nColGlobal == B.nRowGlobal)
@@ -73,12 +60,14 @@ def matmul(A, B):
     mpiDtype = npDtypeToMpiDtype(npDtype)
     
     # Gather local matrices of A along the grid fibers
-    targetA = allGather(A, A.grid.fibWorld)
+    # targetA = allGather(A, A.grid.fibWorld)
+    targetA = allGatherAndConcat(A.localMat, A.grid.fibWorld, concat="col")
     # if (A.grid.myrank == 4):
         # print(targetA)
 
     # Gather local matrices of B along the grid columns
-    targetB = allGather(B, B.grid.colWorld)
+    # targetB = allGather(B, B.grid.colWorld)
+    targetB = allGatherAndConcat(B.localMat, B.grid.colWorld, concat="col")
     # if (B.grid.myrank == 4):
         # print(targetB)
     
@@ -99,7 +88,9 @@ def matmul(A, B):
     
     # Distribute the C contribution from multiplying gathered A and B
     # Which are local matrices of C along the grid rows 
-    reduceScatter(C, C.grid.rowWorld)
+    # reduceScatter(C, C.grid.rowWorld)
+    C.localMat = splitAndReduceScatter(C.localMat, C.grid.rowWorld, split='col')
+    
     # print(C.grid.myrank, C.localMat)
     
     return C
@@ -139,4 +130,25 @@ if __name__ == "__main__":
 
     A.generate(dtype=np.int32)
     B.generate(dtype=np.int32)
-    matmul(A,B)
+    C = matmul(A,B)
+    
+    ## Check correctness
+    Ag = A.allGather()
+    Bg = B.allGather()
+    Cg = C.allGather()
+    if A.grid.myrank == 0:
+        print(Ag)
+        print("x")
+    if B.grid.myrank == 0:
+        print(Bg)
+        print("=")
+    if C.grid.myrank == 0:
+        print(Cg)
+        print("---")
+
+    if np.array_equal( np.matmul(Ag, Bg), Cg):
+        if A.grid.myrank == 0:
+            print("Correct")
+    else:
+        if A.grid.myrank == 0:
+            print("Incorrect")
