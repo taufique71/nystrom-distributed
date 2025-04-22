@@ -32,7 +32,7 @@ def allGatherAndConcat(mat, world, concat="col"):
         nColToRecv = np.zeros(world.Get_size(), dtype=np.int32)
         world.Allgather([nColToSend, MPI.INT], [nColToRecv, MPI.INT])
         nValToRecv = mat.shape[0] * nColToRecv # Multiplying all entries with number of local rows would give the number of entries
-        recvDispls = np.zeros(world.Get_size() + 1, dtype=npDtype) # One extra entry because our prefix sum would start from 0 as initial entry
+        recvDispls = np.zeros(world.Get_size() + 1, dtype=np.int32) # One extra entry because our prefix sum would start from 0 as initial entry
         np.cumsum(nValToRecv, out=recvDispls[1:])
         targetMat = np.zeros(recvDispls[-1], dtype=npDtype).reshape((mat.shape[0], np.sum(nColToRecv)), order='F')
 
@@ -45,7 +45,7 @@ def allGatherAndConcat(mat, world, concat="col"):
         nRowToRecv = np.zeros(world.Get_size(), dtype=np.int32)
         world.Allgather([nRowToSend, MPI.INT], [nRowToRecv, MPI.INT])
         nValToRecv = mat.shape[1] * nRowToRecv # Multiplying all entries with number of local cols would give the number of entries
-        recvDispls = np.zeros(world.Get_size() + 1, dtype=npDtype) # One extra entry because our prefix sum would start from 0 as initial entry
+        recvDispls = np.zeros(world.Get_size() + 1, dtype=np.int32) # One extra entry because our prefix sum would start from 0 as initial entry
         np.cumsum(nValToRecv, out=recvDispls[1:])
         recvBuff = np.zeros(recvDispls[-1], dtype=npDtype)
 

@@ -7,52 +7,6 @@ from communicator import ProcGrid
 from matrix import ParMat
 from utils import *
 
-# def allGather(M, world):
-    # # Gather local copies of the distributed matrix M
-    # # Concatenates the copies along the column and return the concatenated copy
-    # # All matrices are stored in column major order in Fortran
-    # # Assumes same number of matrix rows in all processes
-    # npDtype = M.localMat.dtype
-    # mpiDtype = npDtypeToMpiDtype(npDtype)
-
-    # rankInWorld = world.Get_rank()
-
-    # nColToSend = np.array(M.nColLocal, dtype=npDtype)
-    # nColToRecv = np.zeros(world.Get_size(), dtype=npDtype)
-    # world.Allgather([nColToSend, mpiDtype], [nColToRecv, mpiDtype])
-    # nValToRecv = M.nRowLocal * nColToRecv # Multiplying all entries with number of local rows would give the number of entries
-    # recvDispls = np.zeros(world.Get_size() + 1, dtype=npDtype) # One extra entry because our prefix sum would start from 0 as initial entry
-    # np.cumsum(nValToRecv, out=recvDispls[1:])
-    # targetM = np.zeros(recvDispls[-1], dtype=npDtype).reshape((M.nRowLocal, np.sum(nColToRecv)), order='F')
-
-    # world.Allgatherv([M.localMat, M.nColLocal*M.nRowLocal, mpiDtype], [targetM, nValToRecv, recvDispls[:-1], mpiDtype])
-    # return targetM
-
-
-
-# def reduceScatter(M, world):
-    # # Modifies the contents of M matrix
-    # # Split the local matrix, redistributes the chunks of M along the world and performs reduction
-    # npDtype = M.localMat.dtype
-    # mpiDtype = npDtypeToMpiDtype(npDtype)
-
-    # rankInWorld = world.Get_rank()
-
-    # ## Gather number of columns to send to each process
-    # nColToSend = np.array(M.nColLocal, dtype=npDtype)
-    # nColToRecv = np.zeros(world.Get_size(), dtype=npDtype) 
-    # world.Allgather([nColToSend, mpiDtype], [nColToRecv, mpiDtype])
-    # nValToRecv = M.nRowLocal * nColToRecv
-    # splitLocs = np.zeros(world.Get_size() + 1, dtype=npDtype)
-    # np.cumsum(nColToRecv, out=splitLocs[1:])
-    # targetM = np.zeros((M.nRowLocal, nColToRecv[rankInWorld]), dtype=npDtype, order='F')
-
-    # # Supports vector version even though there is no `v` suffix. Similar case in C API
-    # # https://mpi4py.readthedocs.io/en/stable/reference/mpi4py.MPI.Comm.html#mpi4py.MPI.Comm.Reduce_scatter
-    # world.Reduce_scatter([M.localMat, mpiDtype], [targetM, nValToRecv[rankInWorld], mpiDtype], nValToRecv, op=MPI.SUM)
-
-    # M.localMat = targetM
-
 def matmul(A, B):
     assert(A.nColGlobal == B.nRowGlobal)
 
@@ -72,7 +26,7 @@ def matmul(A, B):
         # print(targetB)
     
     # Create distributed C matrix with appropriate dimension that has no content
-    C = ParMat(n1, n3, A.grid, 'C') # Use the same process grid as A. Grid does not change for A, B or C. Only the face of the grid change which is specific to the matrix
+    C = ParMat(A.nRowGlobal, B.nColGlobal, A.grid, 'C') # Use the same process grid as A. Grid does not change for A, B or C. Only the face of the grid change which is specific to the matrix
 
     # Multiply gathered A with gathered B
     C.localMat = np.matmul(targetA, targetB, order='F')

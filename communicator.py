@@ -9,8 +9,8 @@ class ProcGrid:
         self.myrank = MPI.COMM_WORLD.Get_rank()
         self.nprocs = MPI.COMM_WORLD.Get_size()
 
-        if(self.myrank == 0):
-            print("Grid: ", self.nProcRow, "x", self.nProcCol, "x", self.nProcFib)
+        # if(self.myrank == 0):
+            # print("Grid: ", self.nProcRow, "x", self.nProcCol, "x", self.nProcFib)
 
         # Initialize with the default group involved with MPI.COMM_WORLD
         # Would be updated later
