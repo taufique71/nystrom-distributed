@@ -101,17 +101,17 @@ class ParMat:
 
     def allGather(self):
         if self.frontFace == 'A':
-            x = allGatherAndConcat(self.localMat, self.grid.fibWorld, concat='col')
-            y = allGatherAndConcat(x, self.grid.rowWorld, concat='col')
-            z = allGatherAndConcat(y, self.grid.colWorld, concat='row')
+            x, agTime, agvTime, totTime = allGatherAndConcat(self.localMat, self.grid.fibWorld, concat='col')
+            y, agTime, agvTime, totTime = allGatherAndConcat(x, self.grid.rowWorld, concat='col')
+            z, agTime, agvTime, totTime = allGatherAndConcat(y, self.grid.colWorld, concat='row')
             return z
         elif self.frontFace == 'B':
-            x = allGatherAndConcat(self.localMat, self.grid.colWorld, concat='col')
-            y = allGatherAndConcat(x, self.grid.fibWorld, concat='col')
-            z = allGatherAndConcat(y, self.grid.rowWorld, concat='row')
+            x, agTime, agvTime, totTime = allGatherAndConcat(self.localMat, self.grid.colWorld, concat='col')
+            y, agTime, agvTime, totTime = allGatherAndConcat(x, self.grid.fibWorld, concat='col')
+            z, agTime, agvTime, totTime = allGatherAndConcat(y, self.grid.rowWorld, concat='row')
             return z
         elif self.frontFace == 'C':
-            x = allGatherAndConcat(self.localMat, self.grid.rowWorld, concat='col')
-            y = allGatherAndConcat(x, self.grid.fibWorld, concat='col')
-            z = allGatherAndConcat(y, self.grid.colWorld, concat='row')
+            x, agTime, agvTime, totTime = allGatherAndConcat(self.localMat, self.grid.rowWorld, concat='col')
+            y, agTime, agvTime, totTime = allGatherAndConcat(x, self.grid.fibWorld, concat='col')
+            z, agTime, agvTime, totTime = allGatherAndConcat(y, self.grid.colWorld, concat='row')
             return z

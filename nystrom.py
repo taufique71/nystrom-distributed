@@ -15,35 +15,37 @@ def matmul(A, B):
     
     # Gather local matrices of A along the grid fibers
     # targetA = allGather(A, A.grid.fibWorld)
-    targetA = allGatherAndConcat(A.localMat, A.grid.fibWorld, concat="col")
-    # if (A.grid.myrank == 4):
-        # print(targetA)
+    targetA, agTime, agvTime, totTime = allGatherAndConcat(A.localMat, A.grid.fibWorld, concat="col")
+    if (A.grid.myrank == 0):
+        print("Time to gather A:", totTime, "sec")
+        print("\tAllgather:", agTime, "sec")
+        print("\tAllgatherv:", agvTime, "sec")
 
     # Gather local matrices of B along the grid columns
     # targetB = allGather(B, B.grid.colWorld)
-    targetB = allGatherAndConcat(B.localMat, B.grid.colWorld, concat="col")
-    # if (B.grid.myrank == 4):
-        # print(targetB)
+    targetB, agTime, agvTime, totTime = allGatherAndConcat(B.localMat, B.grid.colWorld, concat="col")
+    if (B.grid.myrank == 0):
+        print("Time to gather B:", totTime, "sec")
+        print("\tAllgather:", agTime, "sec")
+        print("\tAllgatherv:", agvTime, "sec")
     
     # Create distributed C matrix with appropriate dimension that has no content
     C = ParMat(A.nRowGlobal, B.nColGlobal, A.grid, 'C') # Use the same process grid as A. Grid does not change for A, B or C. Only the face of the grid change which is specific to the matrix
 
     # Multiply gathered A with gathered B
+    t0 = MPI.Wtime()
     C.localMat = np.matmul(targetA, targetB, order='F')
-    # print(C.grid.myrank, C.localMat)
-    # print(C.localMat.flags)
+    t1 = MPI.Wtime()
+    if (C.grid.myrank == 0):
+        print("Time for local multiply:", t1-t0, "sec")
 
-    # MPI.COMM_WORLD.Barrier()
-    # sys.stdout.flush();
-    # sys.stderr.flush();
-    # if (C.grid.myrank == 0):
-        # print("---")
-    # MPI.COMM_WORLD.Barrier()
-    
     # Distribute the C contribution from multiplying gathered A and B
     # Which are local matrices of C along the grid rows 
     # reduceScatter(C, C.grid.rowWorld)
-    C.localMat = splitAndReduceScatter(C.localMat, C.grid.rowWorld, split='col')
+    C.localMat, rsTime, totTime = splitAndReduceScatter(C.localMat, C.grid.rowWorld, split='col')
+    if (C.grid.myrank == 0):
+        print("Time to scatter and reduce C:", totTime, "sec")
+        print("\tReduceScatter:", rsTime, "sec")
     
     # print(C.grid.myrank, C.localMat)
     

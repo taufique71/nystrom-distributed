@@ -190,7 +190,7 @@ def test_3d_float(p1, p2, p3, n1, n2, n3):
     Bg = B.allGather()
     Cg = C.allGather()
 
-    flag = np.array_equal( np.matmul(Ag, Bg), Cg)
+    flag = np.allclose( np.matmul(Ag, Bg), Cg)
     if myrank == 0:
         if flag:
             print(f"[test_3d_float] success")
@@ -216,7 +216,7 @@ if __name__ == '__main__':
 
     myrank = MPI.COMM_WORLD.Get_rank()
     nprocs = MPI.COMM_WORLD.Get_size()
-
+    
     test_3d(p1, p2, p3, n1, n2, n3)
     test_3d_float(p1, p2, p3, n1, n2, n3)
     test_2d(p1, p2, p3, n1, n2, n3)
