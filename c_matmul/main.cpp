@@ -13,11 +13,6 @@ public:
 		rowRank = myrank / (nProcCol * nProcFib);
 		colRank = (myrank / nProcFib) % nProcCol;
 		fibRank = myrank % nProcFib;
-        //unravelIndex(myrank, rowRank, colRank, fibRank);
-
-        // Create groups for rows, columns, and fibers
-        //createGroups();
-        //createCommunicators();
 
 		std::vector<std::vector<std::vector<int>>> rowGroupRanks;
 		std::vector<std::vector<std::vector<int>>> colGroupRanks;
@@ -105,6 +100,35 @@ public:
     int colRank;
     int fibRank;
 };
+
+//class ParMat {
+//public:
+    //ParMat(int m, int n, ProcGrid& grid, char frontFace)
+        //: nRowGlobal(m), nColGlobal(n), grid(grid), frontFace(frontFace) {
+        //initialize();
+    //}
+
+    //void generate() {
+        //localMat.resize(nRowLocal, std::vector<double>(nColLocal, 0.0));
+        //for (int idxRowLocal = 0; idxRowLocal < nRowLocal; ++idxRowLocal) {
+            //for (int idxColLocal = 0; idxColLocal < nColLocal; ++idxColLocal) {
+                //int idxRowGlobal = localRowStart + idxRowLocal;
+                //int idxColGlobal = localColStart + idxColLocal;
+                //localMat[idxRowLocal][idxColLocal] = idxRowGlobal * nColGlobal + idxColGlobal;
+            //}
+        //}
+    //}
+
+    //void printLocalMatrix() const {
+        //std::cout << "Local Matrix (Process " << grid.myrank << "):\n";
+        //for (const auto& row : localMat) {
+            //for (const auto& val : row) {
+                //std::cout << val << " ";
+            //}
+            //std::cout << "\n";
+        //}
+    //}
+//};
 
 int main(int argc, char* argv[]) {
     // Initialize MPI
