@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 # Add the executable
 add_executable(matmul main.cpp)
+add_executable(prng_test prng_test.cpp)
 
 # Link the MPI libraries
 target_link_libraries(matmul MPI::MPI_CXX)
