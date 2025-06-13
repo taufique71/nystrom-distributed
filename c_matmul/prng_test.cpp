@@ -1,6 +1,9 @@
 #include <iostream>
 #include <chrono>
 #include <random>
+#include <omp.h>
+#include <iostream>
+
 
 static inline uint64_t rotl(const uint64_t x, int k) {
     return (x << k) | (x >> (64 - k));
@@ -38,26 +41,24 @@ private:
 
 int main() {
     const size_t arraySize = 10000000; // 10 million
-    //double* randomNumbers = new double[arraySize];
-    uint64_t* randomNumbers = new uint64_t[arraySize];
+    double* randomNumbers = new double[arraySize];
+    //uint64_t* randomNumbers = new uint64_t[arraySize];
 
     // Initialize the PRNG with two seeds
     Xoroshiro128Plus prng(123456789, 987654321);
 
-    // Measure the time taken to fill the array
-    auto start = std::chrono::high_resolution_clock::now();
+    double start = omp_get_wtime();
 
     for (size_t i = 0; i < arraySize; ++i) {
-        //randomNumbers[i] = prng.nextDouble();
-        randomNumbers[i] = prng.next();
+        randomNumbers[i] = prng.nextDouble();
+        //randomNumbers[i] = prng.next();
+        //std::cout << randomNumbers[i] << std::endl;
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end - start;
+    double end = omp_get_wtime();
 
-    std::cout << "Time taken to fill the array: " << duration.count() << " seconds" << std::endl;
+    std::cout << "Time taken to fill the array: " << end-start << " seconds" << std::endl;
 
-    // Clean up
     delete[] randomNumbers;
 
     return 0;
