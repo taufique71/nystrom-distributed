@@ -6,6 +6,8 @@ import numpy as np
 from communicator import ProcGrid
 from matrix import ParMat
 from utils import *
+from randomgen import Xoroshiro128
+from numpy.random import Generator
 
 def matmul(A, B):
     assert(A.nColGlobal == B.nRowGlobal)
@@ -49,6 +51,78 @@ def matmul(A, B):
     
     # print(C.grid.myrank, C.localMat)
     
+    return C
+
+def matmul1_gen(A, B, generator = 'xoroshiro'):
+    assert(A.nColGlobal == B.nRowGlobal)
+
+    npDtype = A.localMat.dtype
+    mpiDtype = npDtypeToMpiDtype(npDtype)
+    
+    # No need to gather local matrices of A along the grid fibers.
+    # Only local copy of A would be used for 1d matmul
+    t0 = MPI.Wtime()
+    targetA = A.localMat
+    t1 = MPI.Wtime()
+
+    # Generate B
+    t0 = MPI.Wtime()
+    prng = None
+    if generator == 'xoroshiro':
+        prng = Generator(Xoroshiro128(123456789, plusplus=False))
+    # targetB = rg.random((B.nRowGlobal, B.nColGlobal)).astype(npDtype, order='F') # Each process needs entire B
+    targetB = np.zeros( (B.nRowGlobal, B.nColGlobal), dtype=npDtype, order='F')
+    prng.random(targetB.shape, dtype=npDtype, out=targetB)
+    t1 = MPI.Wtime()
+    if (A.grid.myrank == 0):
+        print("Time to generate B:", t1-t0, "sec")
+
+    # Create distributed C matrix with appropriate dimension that has no content
+    C = ParMat(A.nRowGlobal, B.nColGlobal, A.grid, 'C') # Use the same process grid as A. Grid does not change for A, B or C. Only the face of the grid change which is specific to the matrix
+
+    # Multiply local A with generated B
+    t0 = MPI.Wtime()
+    C.localMat = np.matmul(targetA, targetB, order='F')
+    t1 = MPI.Wtime()
+    if (C.grid.myrank == 0):
+        print("Time for local multiply:", t1-t0, "sec")
+
+    return C
+
+def matmul1_comm(A, B, generator = 'xoroshiro'):
+    assert(A.nColGlobal == B.nRowGlobal)
+
+    npDtype = A.localMat.dtype
+    mpiDtype = npDtypeToMpiDtype(npDtype)
+    
+    # No need to gather local matrices of A along the grid fibers.
+    # Only local copy of A would be used for 1d matmul
+    targetA = A.localMat
+
+    # Gather local matrices of B along the grid columns
+    t0 = MPI.Wtime()
+    B.generate_rand(dtype=npDtype, generator="xoroshiro")
+    C.localMat = np.matmul(targetA, targetB, order='F')
+    t1 = MPI.Wtime()
+    if (B.grid.myrank == 0):
+        print("Time to generate B:", t1 - t0, "sec")
+
+    targetB, agTime, agvTime, totTime = allGatherAndConcat(B.localMat, B.grid.colWorld, concat="col")
+    if (B.grid.myrank == 0):
+        print("Time to gather B:", totTime, "sec")
+        # print("\tAllgather:", agTime, "sec")
+        # print("\tAllgatherv:", agvTime, "sec")
+
+    # Create distributed C matrix with appropriate dimension that has no content
+    C = ParMat(A.nRowGlobal, B.nColGlobal, A.grid, 'C') # Use the same process grid as A. Grid does not change for A, B or C. Only the face of the grid change which is specific to the matrix
+
+    # Multiply local A with generated B
+    t0 = MPI.Wtime()
+    C.localMat = np.matmul(targetA, targetB, order='F')
+    t1 = MPI.Wtime()
+    if (C.grid.myrank == 0):
+        print("Time for local multiply:", t1-t0, "sec")
+
     return C
 
 if __name__ == "__main__":  

@@ -127,3 +127,4 @@ def splitAndReduceScatter(mat, world, split="col"):
         pass
 
     M.localMat = targetM
+

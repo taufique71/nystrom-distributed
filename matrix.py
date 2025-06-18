@@ -2,6 +2,8 @@ from mpi4py import MPI
 import numpy as np
 from communicator import ProcGrid
 from utils import *
+from randomgen import Xoroshiro128
+from numpy.random import Generator
 
 class ParMat:
     def __init__(self, m, n, grid, frontFace):
@@ -98,6 +100,13 @@ class ParMat:
         # if (self.grid.myrank == 4):
             # print(self.localMat.shape)
             # print(self.localMat)
+
+    def generate_rand(self, dtype=np.float64, generator="xoroshiro"):
+        self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+        prng = None
+        if generator == 'xoroshiro':
+            prng = Generator(Xoroshiro128(123456789, plusplus=False))
+        prng.random(self.localMat, dtype=dtype, out=targetB)
 
     def allGather(self):
         if self.frontFace == 'A':

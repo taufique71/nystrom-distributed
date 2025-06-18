@@ -4,15 +4,16 @@
 #SBATCH -C cpu
 #SBATCH -A m4293 # Sparsitute project (A Mathematical Institute for Sparse Computations in Science and Engineering)
 
-#SBATCH -t 0:10:00
+#SBATCH -t 0:05:00
 
-#SBATCH -N 1
+#SBATCH -N 8
 #SBATCH -J matmul
 #SBATCH -o slurm.matmul.o%j
 
 module swap PrgEnv-gnu PrgEnv-intel
 module load python
 
+ALG=matmul1comm
 IMPL=python
 
 SYSTEM=perlmutter_cpu
@@ -29,38 +30,44 @@ export MKL_NUM_THREADS=$THREAD_PER_PROC
 P1=1
 P2=1
 P3=1
-N1=10000
-N2=10000
-N3=10000
-if [ "$N_PROC" -eq 128 ]; then
-	P1=8
-    P2=4
-    P3=4
-elif [ "$N_PROC" -eq 256 ]; then
-	P1=8
-    P2=8
-    P3=4
-elif [ "$N_PROC" -eq 512 ]; then
-	P1=8
-    P2=8
-    P3=8
-elif [ "$N_PROC" -eq 1024 ]; then
-	P1=16
-    P2=8
-    P3=8
+N1=50000
+N2=50000
+N3=5000
+if [ "$ALG" == "matmul" ]; then
+    if [ "$N_PROC" -eq 128 ]; then
+        P1=8
+        P2=4
+        P3=4
+    elif [ "$N_PROC" -eq 256 ]; then
+        P1=8
+        P2=8
+        P3=4
+    elif [ "$N_PROC" -eq 512 ]; then
+        P1=8
+        P2=8
+        P3=8
+    elif [ "$N_PROC" -eq 1024 ]; then
+        P1=16
+        P2=8
+        P3=8
+    fi
+elif [ "$ALG" == "matmul1gen" ]; then
+    P1=$N_PROC
+    P2=1
+    P3=1
 fi
 
-STDOUT_FILE=$SCRATCH/nystrom/matmul_"$IMPL"_"$N_PROC"_"$P1"x"$P2"x"$P3"
+STDOUT_FILE=$SCRATCH/nystrom/"$ALG"_"$IMPL"_"$N_PROC"_"$P1"x"$P2"x"$P3"
 
 PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
 BIN=$HOME/Codes/nystrom-distributed/build/c_matmul/matmul
 
 if [ "$IMPL" == "cpp" ]; then
     srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
-        $BIN -p1 $P1 -p2 $P2 -p3 $P3 -n1 $N1 -n2 $N2 -n3 $N3 &> $STDOUT_FILE
+        $BIN -p1 $P1 -p2 $P2 -p3 $P3 -n1 $N1 -n2 $N2 -n3 $N3 -alg $ALG &> $STDOUT_FILE
 elif [ "$IMPL" == "python" ]; then
     srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
-        python $PY -p1 $P1 -p2 $P2 -p3 $P3 -n1 $N1 -n2 $N2 -n3 $N3 &> $STDOUT_FILE
+        python $PY -p1 $P1 -p2 $P2 -p3 $P3 -n1 $N1 -n2 $N2 -n3 $N3 -alg $ALG &> $STDOUT_FILE
 
 fi
 
