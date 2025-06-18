@@ -488,13 +488,14 @@ int main(int argc, char* argv[]) {
 
     // Print the parameters for verification (optional)
     if (myrank == 0) {
-        std::cout << "Parameters:" << std::endl;
-        std::cout << "p1: " << p1 << std::endl;
-        std::cout << "p2: " << p2 << std::endl;
-        std::cout << "p3: " << p3 << std::endl;
-        std::cout << "n1: " << n1 << std::endl;
-        std::cout << "n2: " << n2 << std::endl;
-        std::cout << "n3: " << n3 << std::endl;
+        printf("testing %dx%d with %dx%d on %dx%dx%d grid\n", n1, n2, n2, n3, p1, p2, p3);
+        //std::cout << "Parameters:" << std::endl;
+        //std::cout << "p1: " << p1 << std::endl;
+        //std::cout << "p2: " << p2 << std::endl;
+        //std::cout << "p3: " << p3 << std::endl;
+        //std::cout << "n1: " << n1 << std::endl;
+        //std::cout << "n2: " << n2 << std::endl;
+        //std::cout << "n3: " << n3 << std::endl;
     }
 
     // Create the process grid
