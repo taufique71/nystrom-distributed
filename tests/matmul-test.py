@@ -10,6 +10,7 @@ sys.path.append(parent_dir)
 
 from nystrom import matmul
 from nystrom import matmul1_gen
+from nystrom import matmul1_comm
 from communicator import ProcGrid
 from matrix import ParMat
 

@@ -102,7 +102,6 @@ def matmul1_comm(A, B, generator = 'xoroshiro'):
     # Gather local matrices of B along the grid columns
     t0 = MPI.Wtime()
     B.generate_rand(dtype=npDtype, generator="xoroshiro")
-    C.localMat = np.matmul(targetA, targetB, order='F')
     t1 = MPI.Wtime()
     if (B.grid.myrank == 0):
         print("Time to generate B:", t1 - t0, "sec")

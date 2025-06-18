@@ -106,7 +106,7 @@ class ParMat:
         prng = None
         if generator == 'xoroshiro':
             prng = Generator(Xoroshiro128(123456789, plusplus=False))
-        prng.random(self.localMat, dtype=dtype, out=targetB)
+        prng.random(self.localMat.shape, dtype=dtype, out=self.localMat)
 
     def allGather(self):
         if self.frontFace == 'A':
