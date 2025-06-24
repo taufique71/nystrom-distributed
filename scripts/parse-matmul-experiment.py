@@ -8,7 +8,8 @@ def parse_experiment_file(file_path):
     parts = filename.split('_')
     alg = parts[0]
     impl = parts[1]
-    nproc = int(parts[2])
+    nnode = int(parts[2])
+    nproc = int(parts[3])
 
     with open(file_path, 'r') as file:    
         content = file.read()
@@ -39,6 +40,7 @@ def parse_experiment_file(file_path):
     return {
         'alg': alg,
         'impl': impl,
+        'nnode': nnode,
         'nproc': nproc,
         'a_rows': a_rows,
         'a_cols': a_cols,

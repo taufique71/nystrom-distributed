@@ -704,6 +704,7 @@ int main(int argc, char* argv[]) {
     // Check that the number of processes matches the expected grid size
     int p = nprocs;
     if (p != p1 * p2 * p3) {
+    	std::cerr << p << " vs " << p1 << "*" << p2 << "*" << p3  << std::endl;
     	std::cerr << "Error: Number of processes does not match p1 * p2 * p3." << std::endl;
     	MPI_Abort(MPI_COMM_WORLD, 1);
     }
