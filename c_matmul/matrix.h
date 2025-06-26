@@ -1,3 +1,6 @@
+#ifndef MATRIX_H
+#define MATRIX_H
+
 #include <mpi.h>
 #include <iostream>
 #include <vector>
@@ -5,138 +8,8 @@
 #include <numeric>
 #include <omp.h>
 #include <mkl.h>
-
-static inline uint64_t rotl(const uint64_t x, int k) {
-    return (x << k) | (x >> (64 - k));
-}
-
-class Xoroshiro128Plus {
-public:
-    Xoroshiro128Plus(uint64_t seed1, uint64_t seed2) : state1(seed1), state2(seed2) {}
-
-    uint64_t next() {
-        uint64_t s0 = state1;
-        uint64_t s1 = state2;
-        uint64_t result = s0 + s1;
-                                               
-        s1 ^= s0;
-        state1 = rotl(s0, 24) ^ s1 ^ (s1 << 16); // a, b
-        state2 = rotl(s1, 37); // c
-
-        return result;
-    }
-
-    double nextDouble() {
-        //return static_cast<double>(next()) / static_cast<double>(UINT64_MAX);
-        return (next() >> 11) * 0x1.0p-53;
-    }
-
-private:
-    uint64_t state1;
-    uint64_t state2;
-};
-
-class ProcGrid {
-public:
-    ProcGrid(int nProcRow, int nProcCol, int nProcFib) 
-        : nProcRow(nProcRow), nProcCol(nProcCol), nProcFib(nProcFib) {
-        MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-        MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-
-        // Calculate ranks in the 3D grid
-        rowRank = myrank / (nProcCol * nProcFib);
-        colRank = (myrank / nProcFib) % nProcCol;
-        fibRank = myrank % nProcFib;
-
-        std::vector<std::vector<std::vector<int>>> rowGroupRanks;
-        std::vector<std::vector<std::vector<int>>> colGroupRanks;
-        std::vector<std::vector<std::vector<int>>> fibGroupRanks;
-
-        // Initialize rowGroupRanks
-        rowGroupRanks.resize(nProcRow);
-        for (int i = 0; i < nProcRow; ++i) {
-            rowGroupRanks[i].resize(nProcFib);
-        }
-
-        // Initialize colGroupRanks
-        colGroupRanks.resize(nProcCol);
-        for (int i = 0; i < nProcCol; ++i) {
-            colGroupRanks[i].resize(nProcFib);
-        }
-
-        // Initialize fibGroupRanks
-        fibGroupRanks.resize(nProcRow);
-        for (int i = 0; i < nProcRow; ++i) {
-            fibGroupRanks[i].resize(nProcCol);
-        }
-
-        // Populate the group ranks
-        for (int i = 0; i < nprocs; ++i) {
-            int a = i / (nProcCol * nProcFib); // Row index
-            int b = (i / nProcFib) % nProcCol; // Column index
-            int c = i % nProcFib;               // Fiber index
-
-            rowGroupRanks[a][c].push_back(i);
-            colGroupRanks[b][c].push_back(i);
-            fibGroupRanks[a][b].push_back(i);
-        }
-
-        MPI_Comm_group(MPI_COMM_WORLD, &worldGroup);
-
-        // Create row world
-        std::vector<int> rowRanks = rowGroupRanks[rowRank][fibRank];
-        MPI_Group_incl(worldGroup, rowRanks.size(), rowRanks.data(), &rowGroup);
-        MPI_Comm_create(MPI_COMM_WORLD, rowGroup, &rowWorld);
-        MPI_Comm_rank(rowWorld, &rankInRowWorld);
-
-        // Create column world
-        std::vector<int> colRanks = colGroupRanks[colRank][fibRank];
-        MPI_Group_incl(worldGroup, colRanks.size(), colRanks.data(), &colGroup);
-        MPI_Comm_create(MPI_COMM_WORLD, colGroup, &colWorld);
-        MPI_Comm_rank(colWorld, &rankInColWorld);
-
-        // Create fiber world
-        std::vector<int> fibRanks = fibGroupRanks[rowRank][colRank];
-        MPI_Group_incl(worldGroup, fibRanks.size(), fibRanks.data(), &fibGroup);
-        MPI_Comm_create(MPI_COMM_WORLD, fibGroup, &fibWorld);
-        MPI_Comm_rank(fibWorld, &rankInFibWorld);
-    }
-    
-
-
-    ~ProcGrid() {
-        //MPI_Group_free(&rowGroup);
-        //MPI_Group_free(&colGroup);
-        //MPI_Group_free(&fibGroup);
-        //MPI_Group_free(&worldGroup);
-    }
-
-    void printInfo() {
-        std::cout << "Rank: " << myrank 
-                  << ",\tRow Rank: " << rowRank 
-                  << ",\tCol Rank: " << colRank 
-                  << ",\tFib Rank: " << fibRank << std::endl;
-    }
-
-    int nProcRow;
-    int nProcCol;
-    int nProcFib;
-    int myrank;
-    int nprocs;
-    MPI_Group rowGroup;
-    MPI_Group colGroup;
-    MPI_Group fibGroup;
-    MPI_Group worldGroup;
-    MPI_Comm rowWorld;
-    MPI_Comm colWorld;
-    MPI_Comm fibWorld;
-    int rankInRowWorld;
-    int rankInColWorld;
-    int rankInFibWorld;
-    int rowRank;
-    int colRank;
-    int fibRank;
-};
+#include "procgrid.h"
+#include "prng.h"
 
 class ParMat {
 public:
@@ -259,6 +132,10 @@ public:
     double *localMat;
 };
 
+/*
+ * Written by: Taufique Hussain (hussaint@wfu.edu)
+ * General matrix matrix multiplication
+ * */
 ParMat matmul(ParMat& A, ParMat& B){
     double t0, t1, t2, t3;
     int nproc, myrank;
@@ -464,6 +341,13 @@ ParMat matmul(ParMat& A, ParMat& B){
     return C;
 }
 
+/*
+ * Written by: Taufique Hussain (hussaint@wfu.edu)
+ * Nystrom style first multiplication
+ * Y = A x Omega where Omega is a tall and skinny random matrix.
+ * All matrices distributed in 1D process grid
+ * Omega is generated redundantly in all process
+ * */
 ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
     double t0, t1, t2, t3;
     int nproc, myrank;
@@ -482,7 +366,7 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
         t0 = MPI_Wtime();
 
         recvB = new double[B.nRowGlobal * B.nColGlobal]; // Allocate for received B matrix
-        Xoroshiro128Plus prng(123456789, 987654321);
+        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
 
         for (size_t i = 0; i < B.nRowGlobal * B.nColGlobal; ++i) {
             recvB[i] = prng.nextDouble();
@@ -536,6 +420,13 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
     return C;
 }
 
+/*
+ * Written by: Taufique Hussain (hussaint@wfu.edu)
+ * Nystrom style first multiplication
+ * Y = A x Omega where Omega is a tall and skinny random matrix.
+ * All matrices distributed in 1D process grid
+ * A piece of Omega is randomly generated in all process and communicated
+ * */
 ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
     double t0, t1, t2, t3;
     int nproc, myrank;
@@ -554,7 +445,7 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
     {
         t0 = MPI_Wtime();
 
-        Xoroshiro128Plus prng(123456789, 987654321);
+        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
 
         for (size_t i = 0; i < B.nRowLocal * B.nColLocal; ++i) {
             B.localMat[i] = prng.nextDouble();
@@ -652,94 +543,4 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
 }
 
 
-int main(int argc, char* argv[]) {
-    // Initialize MPI
-    MPI_Init(&argc, &argv);
-
-    // Default values
-    int p1 = 0, p2 = 0, p3 = 0;
-    int n1 = 0, n2 = 0, n3 = 0;
-    std::string alg;
-
-    // Parse command line arguments
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "-p1" || arg == "--p1") {
-            if (i + 1 < argc) {
-                p1 = std::stoi(argv[++i]);
-            }
-        } else if (arg == "-p2" || arg == "--p2") {
-            if (i + 1 < argc) {
-                p2 = std::stoi(argv[++i]);
-            }
-        } else if (arg == "-p3" || arg == "--p3") {
-            if (i + 1 < argc) {
-                p3 = std::stoi(argv[++i]);
-            }
-        } else if (arg == "-n1" || arg == "--n1") {
-            if (i + 1 < argc) {
-                n1 = std::stoi(argv[++i]);
-            }
-        } else if (arg == "-n2" || arg == "--n2") {
-            if (i + 1 < argc) {
-                n2 = std::stoi(argv[++i]);
-            }
-        } else if (arg == "-n3" || arg == "--n3") {
-            if (i + 1 < argc) {
-                n3 = std::stoi(argv[++i]);
-            }
-        } else if (arg == "-alg" || arg == "--alg") { 
-            if (i + 1 < argc) {
-                alg = argv[++i]; // Store the string value
-            }
-        }
-    }
-
-    // Get MPI rank and size
-    int myrank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
-    int nprocs;
-    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-
-    // Check that the number of processes matches the expected grid size
-    int p = nprocs;
-    if (p != p1 * p2 * p3) {
-    	std::cerr << p << " vs " << p1 << "*" << p2 << "*" << p3  << std::endl;
-    	std::cerr << "Error: Number of processes does not match p1 * p2 * p3." << std::endl;
-    	MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-
-    // Print the parameters for verification (optional)
-    if (myrank == 0) {
-        printf("testing %dx%d with %dx%d on %dx%dx%d grid\n", n1, n2, n2, n3, p1, p2, p3);
-    }
-
-    // Create the process grid
-    ProcGrid grid(p1, p2, p3);
-    //grid.printInfo();
-    
-    ParMat A(n1, n2, grid, 'A');
-    A.generate();
-    //A.printLocalMatrix();
-    
-    //MPI_Barrier(MPI_COMM_WORLD);
-    //if(myrank == 0) std::cout << "---" << std::endl;
-
-    ParMat B(n2, n3, grid, 'B');
-    B.generate();
-    //B.printLocalMatrix();
-
-    if(alg == "matmul"){
-        ParMat C = matmul(A, B);
-    }
-    else if (alg == "matmul1gen") {
-        ParMat C = matmul1_gen(A, B, "xoroshiro");
-    }
-    else if (alg == "matmul1comm") {
-        ParMat C = matmul1_comm(A, B, "xoroshiro");
-    }
-
-    // Finalize MPI
-    MPI_Finalize();
-    return 0;
-}
+#endif
