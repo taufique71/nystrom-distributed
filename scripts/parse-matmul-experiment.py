@@ -69,7 +69,7 @@ def save_to_csv(data, output_file):
     df.to_csv(output_file, index=False)
 
 if __name__ == "__main__":
-    directory = '/pscratch/sd/t/taufique/nystrom'  # Change this to your directory
+    directory = '/pscratch/sd/t/taufique/nystrom/matmul_benchmarking'  # Change this to your directory
     output_file = 'matmul-results.csv'
     
     experiment_data = collect_experiment_data(directory)

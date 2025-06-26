@@ -8,9 +8,9 @@ import numpy as np
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
 
-from nystrom import matmul
-from nystrom import matmul1_gen
-from nystrom import matmul1_comm
+from matrix import matmul
+from matrix import matmul1_gen
+from matrix import matmul1_comm
 from communicator import ProcGrid
 from matrix import ParMat
 
