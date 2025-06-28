@@ -100,8 +100,7 @@ if __name__ == "__main__":
     grid = ProcGrid(args.p1, args.p2, args.p3)
 
     A = ParMat(n, n, grid, 'A')
-    A.gen_symm_pos_semidef(rank=r)
-
+    A.generate(dtype=np.float64)
 
     if alg == "nystrom-1d-noredist-1d":
         Y, Z = nystrom_1d_noredist_1d(A,r)
