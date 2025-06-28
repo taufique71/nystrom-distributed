@@ -101,11 +101,11 @@ class ParMat:
             # print(self.localMat.shape)
             # print(self.localMat)
 
-    def generate_rand(self, dtype=np.float64, generator="xoroshiro"):
+    def generate_rand(self,seed, dtype=np.float64, generator="xoroshiro"):
         self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
         prng = None
         if generator == 'xoroshiro':
-            prng = Generator(Xoroshiro128(123456789, plusplus=False))
+            prng = Generator(Xoroshiro128(seed, plusplus=False))
         prng.random(self.localMat.shape, dtype=dtype, out=self.localMat)
 
     def allGather(self):
