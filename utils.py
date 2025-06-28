@@ -122,9 +122,31 @@ def splitAndReduceScatter(mat, world, split="col"):
         totTime = t2-t0
 
         return targetMat, rsTime, totTime
+    
     elif split == 'row':
-        # Will be taken care of when needed
-        pass
+        t0 = MPI.Wtime()
+        nRowToRecv = np.zeros(world.Get_size(), dtype=np.int32) 
+        for r in range(world.Get_size()):
+            if r < (world.Get_size() - 1) :
+                nRowToRecv[r] = int(mat.shape[0] / world.Get_size()) # If rankInWorld is not the last rank in the world
+            elif r == (world.Get_size() - 1) :
+                nRowToRecv[r] = mat.shape[0] - r * int( mat.shape[0] / world.Get_size() )
+
+        nValToRecv =  nRowToRecv * mat.shape[1]
+        splitLocs = np.zeros(world.Get_size() + 1, dtype=npDtype)
+        np.cumsum(nRowToRecv, out=splitLocs[1:])
+        targetMat = np.zeros((nRowToRecv[rankInWorld], mat.shape[1]), dtype=npDtype, order='C')
+
+        t1 = MPI.Wtime()
+
+        world.Reduce_scatter([mat, mpiDtype], [targetMat, nValToRecv[rankInWorld], mpiDtype], nValToRecv, op=MPI.SUM)
+
+        t2 = MPI.Wtime()
+
+        rsTime = t2-t1
+        totTime = t2-t0
+        
+        return targetMat, rsTime, totTime
 
     M.localMat = targetM
 
