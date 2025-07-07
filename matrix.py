@@ -101,6 +101,18 @@ class ParMat:
             # print(self.localMat.shape)
             # print(self.localMat)
 
+    def gen_symm_pos_semidef(self, rank=100, dtype=np.float64):
+        elements = self.nRowGlobal * rank
+        A = np.arange(elements)
+        A = A.reshape(self.nRowGlobal, rank)
+        A = A @ A.T
+        self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+        for idxRowLocal in range(0, self.nRowLocal):
+            for idxColLocal in range(0, self.nColLocal):
+                idxRowGlobal = self.localRowStart + idxRowLocal
+                idxColGlobal = self.localColStart + idxColLocal
+                self.localMat[idxRowLocal,idxColLocal] = A[idxRowGlobal,idxColGlobal]
+
     def generate_rand(self,seed, dtype=np.float64, generator="xoroshiro"):
         self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
         prng = None
