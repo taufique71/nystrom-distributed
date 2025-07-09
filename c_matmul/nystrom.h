@@ -172,14 +172,19 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 
 }
 
-void nystrom_1d_redist_1d(ParMat &A, int r){
+void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
     double t0, t1, t2, t3;
     int nproc, myrank;
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 
-    ProcGrid grid = A.grid; // Same grid
-    ParMat Y(A.nRowGlobal, r, grid, 'C');
+    //ParMat Y(n, r, grid2, 'B');
+    //ParMat Z(r, r, grid2, 'C');
+    ProcGrid grid1 = A.grid;
+    ProcGrid grid2 = Y.grid;
+    // Compute temporary Y on grid1, then redistribute for matmul2 on grid2
+    ParMat Ytemp(A.nRowGlobal, r, grid1, 'C');
+    if(myrank == 0) printf("matmul1 in %dx%dx%d grid\n", A.grid.nProcRow, A.grid.nProcCol, A.grid.nProcFib);
     
     double* Omega = NULL;
     
@@ -210,7 +215,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r){
         auto cblas_lda = A.nRowLocal;
         auto cblas_b = Omega;
         auto cblas_ldb = A.nColGlobal;
-        auto cblas_c = Y.localMat; 
+        auto cblas_c = Ytemp.localMat; 
         auto cblas_ldc = A.nRowLocal; 
                                          
         t0 = MPI_Wtime();
@@ -237,47 +242,44 @@ void nystrom_1d_redist_1d(ParMat &A, int r){
             printf("Time for first dgemm: %lf sec\n", t1-t0);
         }
     }
-    
-    // Prepare second grid
-    // Reverting the nProcCol and nProcRow of the first grid would result in column-wise distribution
-    ProcGrid secondGrid(grid.nProcCol, grid.nProcRow, grid.nProcFib);
-	ParMat redistY(Y.nRowGlobal, Y.nColGlobal, secondGrid, 'B'); // Second grid 
+
+    if(myrank == 0) printf("matmul2 in %dx%dx%d grid\n", Y.grid.nProcRow, Y.grid.nProcCol, Y.grid.nProcFib);
     {
         t0 = MPI_Wtime();
 
         t2 = MPI_Wtime();
 
         int commSize = 0;
-        MPI_Comm_size(secondGrid.rowWorld, &commSize); // Row world because, column distribution
+        MPI_Comm_size(grid2.fibWorld, &commSize); // Row world because, column distribution
 
         // TODO: Change according to Scalapack distribution
         // Y has row-wise distribution. Now change to columns-wise distribution on second grid
-        int nColPerProc = Y.nColGlobal / commSize; // Target number of columns by process other than the last process
+        int nColPerProc = Ytemp.nColGlobal / commSize; // Target number of columns by process other than the last process
         int *nColToSend = new int[commSize]; // Number of columns to send to each process
         for (int p = 0; p < commSize; p++){
             if ( p < (commSize - 1) ) nColToSend[p] = nColPerProc;
-            else nColToSend[p] = Y.nColGlobal - nColPerProc * p;
+            else nColToSend[p] = Ytemp.nColGlobal - nColPerProc * p;
         }
 
         int *nValToSend = new int[commSize]; // Number of values to send to each process
         for (int p = 0; p < commSize; p++){
-            nValToSend[p] = nColToSend[p] * Y.nRowLocal;
+            nValToSend[p] = nColToSend[p] * Ytemp.nRowLocal;
         }
 
         int* sendDispls = new int[commSize + 1];
         sendDispls[0] = 0;
         std::partial_sum(nValToSend, nValToSend + commSize, sendDispls + 1);
 
-        int nRowPerProc = Y.nRowGlobal / commSize; // Number of rows by process other than the last process
+        int nRowPerProc = Ytemp.nRowGlobal / commSize; // Number of rows by process other than the last process
         int *nRowToRecv = new int[commSize]; // Number of rows to receive from each process
         for (int p = 0; p < commSize; p++){
             if ( p < (commSize - 1) ) nRowToRecv[p] = nRowPerProc;
-            else nRowToRecv[p] = Y.nRowGlobal - nRowPerProc * p;
+            else nRowToRecv[p] = Ytemp.nRowGlobal - nRowPerProc * p;
         }
 
         int *nValToRecv = new int[commSize]; // Number of values to receive from each process
         for (int p = 0; p < commSize; p++){
-            nValToRecv[p] = nRowToRecv[p] * nColToSend[secondGrid.rankInRowWorld];
+            nValToRecv[p] = nRowToRecv[p] * nColToSend[grid2.rankInFibWorld];
         }
 
         int* recvDispls = new int[commSize + 1];
@@ -290,20 +292,19 @@ void nystrom_1d_redist_1d(ParMat &A, int r){
         
         // Alltoallv
         t2 = MPI_Wtime();
-        MPI_Alltoallv(Y.localMat, nValToSend, sendDispls, MPI_DOUBLE,
+        MPI_Alltoallv(Ytemp.localMat, nValToSend, sendDispls, MPI_DOUBLE,
                    recvBuff, nValToRecv, recvDispls, MPI_DOUBLE,
-                   secondGrid.colWorld);
+                   grid2.fibWorld);
         t3 = MPI_Wtime();
         double tAlltoallv = t3-t2;
 
 		// Unpacking
         t2 = MPI_Wtime();
-        //recvY = new double[nValToRecv[secondGrid.rankInRowWorld]];
-        for(int c = 0; c < nColToSend[secondGrid.rankInRowWorld]; c++){
+        for(int c = 0; c < nColToSend[grid2.rankInFibWorld]; c++){
             size_t offset = 0;
             for(int p = 0; p < commSize; p++){
-                memcpy(redistY.localMat + c * redistY.nRowLocal + offset, 
-                        recvBuff + recvDispls[secondGrid.rankInRowWorld] + c * nRowToRecv[p], 
+                memcpy(Y.localMat + c * Y.nRowLocal + offset, 
+                        recvBuff + recvDispls[grid2.rankInFibWorld] + c * nRowToRecv[p], 
                         sizeof(double)*nRowToRecv[p]
                 );
                 offset += nRowToRecv[p];
@@ -330,7 +331,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r){
         }
     }
 
-	ParMat Z(r, r, secondGrid, 'C'); // Second grid 
+	//ParMat Z(r, r, secondGrid, 'C'); // Second grid 
     {
         auto cblas_m = r; // Number of rows of transposed Omega
         auto cblas_k = A.nRowGlobal; // Number of columns of transposed Omega / number of rows of local Y
@@ -339,8 +340,8 @@ void nystrom_1d_redist_1d(ParMat &A, int r){
         auto cblas_beta = 0.0;
         auto cblas_a = Omega; 
         auto cblas_lda = A.nRowGlobal; // Stride length to iterate over columns of transposed Omega
-        auto cblas_b = redistY.localMat;
-        auto cblas_ldb = redistY.nRowLocal; // Stride length to iterate over columns of local copy of redistributed Y
+        auto cblas_b = Y.localMat;
+        auto cblas_ldb = Y.nRowLocal; // Stride length to iterate over columns of local copy of redistributed Y
         auto cblas_c = Z.localMat; 
         auto cblas_ldc = r; 
                                          
