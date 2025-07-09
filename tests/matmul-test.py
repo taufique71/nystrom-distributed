@@ -41,10 +41,10 @@ if __name__ == '__main__':
     
     grid = ProcGrid(p1, p2, p3)
     A = ParMat(n1, n2, grid, 'A')
-    A.generate(dtype=np.float64)
+    A.generate()
 
     B = ParMat(n2, n3, grid, 'B')
-    B.generate(dtype=np.float64)
+    B.generate()
 
     C = None
 
