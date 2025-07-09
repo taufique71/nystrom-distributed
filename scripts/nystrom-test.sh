@@ -44,8 +44,8 @@ for ALG in nystrom-1d-noredist-1d nystrom-1d-redist-1d
 #for ALG in nystrom-1d-redist-1d
 do
     #for IMPL in cpp python
-    #for IMPL in cpp
-    for IMPL in python 
+    for IMPL in cpp
+    #for IMPL in python 
     do
         echo $ALG, $IMPL
         if [ "$ALG" = "nystrom-1d-noredist-1d" ]; then

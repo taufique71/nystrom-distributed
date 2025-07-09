@@ -67,10 +67,10 @@ int main(int argc, char* argv[]) {
     int nprocs;
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-    char MPI_version_string[MPI_MAX_LIBRARY_VERSION_STRING];
-    int MPI_version_length;
-    MPI_Get_library_version(MPI_version_string, &MPI_version_length);
-    if (myrank == 0) printf("%.*s\n", MPI_version_length, MPI_version_string);
+    //char MPI_version_string[MPI_MAX_LIBRARY_VERSION_STRING];
+    //int MPI_version_length;
+    //MPI_Get_library_version(MPI_version_string, &MPI_version_length);
+    //if (myrank == 0) printf("%.*s\n", MPI_version_length, MPI_version_string);
 
     // Check that the number of processes matches the expected grid size
     int p = nprocs;
@@ -105,7 +105,9 @@ int main(int argc, char* argv[]) {
         nystrom_1d_noredist_1d(A, r, Y, Z);
     }
     else if (alg == "nystrom-1d-redist-1d") {
-        nystrom_1d_redist_1d(A, r);
+        ParMat Y(n, r, grid2, 'B');
+        ParMat Z(r, r, grid2, 'C');
+        nystrom_1d_redist_1d(A, r, Y, Z);
     }
 
     // Finalize MPI
