@@ -18,11 +18,11 @@ def test_3d(p1, p2, p3, n1, n2, n3):
         print(f"[test_3d] testing {n1}x{n2} with {n2}x{n3} on {p1}x{p2}x{p3} grid")
 
     grid = ProcGrid(p1, p2, p3)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.int32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.int32)
 
-    A.generate(dtype=np.int32)
-    B.generate(dtype=np.int32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()
@@ -42,11 +42,11 @@ def test_2d(p1, p2, p3, n1, n2, n3):
         print(f"[test_2d] testing {n1}x{n2} with {n2}x{n3} on {p1}x{p2*p3}x{1} grid")
 
     grid = ProcGrid(p1, p2*p3, 1)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.int32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.int32)
 
-    A.generate(dtype=np.int32)
-    B.generate(dtype=np.int32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()
@@ -64,11 +64,11 @@ def test_2d(p1, p2, p3, n1, n2, n3):
         print(f"[test_2d] testing {n1}x{n2} with {n2}x{n3} on {p1*p2}x{1}x{p3} grid")
 
     grid = ProcGrid(p1*p2, 1, p3)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.int32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.int32)
 
-    A.generate(dtype=np.int32)
-    B.generate(dtype=np.int32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()
@@ -86,11 +86,11 @@ def test_2d(p1, p2, p3, n1, n2, n3):
         print(f"[test_2d] testing {n1}x{n2} with {n2}x{n3} on {1}x{p1*p2}x{p3} grid")
 
     grid = ProcGrid(1, p1*p2, p3)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.int32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.int32)
 
-    A.generate(dtype=np.int32)
-    B.generate(dtype=np.int32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()
@@ -111,11 +111,11 @@ def test_1d(p1, p2, p3, n1, n2, n3):
         print(f"[test_1d] testing {n1}x{n2} with {n2}x{n3} on {p1*p2*p3}x{1}x{1} grid")
 
     grid = ProcGrid(p1*p2*p3, 1, 1)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.int32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.int32)
 
-    A.generate(dtype=np.int32)
-    B.generate(dtype=np.int32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()
@@ -133,11 +133,11 @@ def test_1d(p1, p2, p3, n1, n2, n3):
         print(f"[test_1d] testing {n1}x{n2} with {n2}x{n3} on {1}x{p1*p2*p3}x{1} grid")
 
     grid = ProcGrid(1, p1*p2*p3, 1)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.int32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.int32)
 
-    A.generate(dtype=np.int32)
-    B.generate(dtype=np.int32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()
@@ -155,11 +155,11 @@ def test_1d(p1, p2, p3, n1, n2, n3):
         print(f"[test_1d] testing {n1}x{n2} with {n2}x{n3} on {1}x{1}x{p1*p2*p3} grid")
 
     grid = ProcGrid(1, 1, p1*p2*p3)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.int32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.int32)
 
-    A.generate(dtype=np.int32)
-    B.generate(dtype=np.int32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()
@@ -179,11 +179,11 @@ def test_3d_float(p1, p2, p3, n1, n2, n3):
         print(f"[test_3d_float] testing {n1}x{n2} with {n2}x{n3} on {p1}x{p2}x{p3} grid")
 
     grid = ProcGrid(p1, p2, p3)
-    A = ParMat(n1, n2, grid, 'A')
-    B = ParMat(n2, n3, grid, 'B')
+    A = ParMat(n1, n2, grid, 'A', dtype=np.float32)
+    B = ParMat(n2, n3, grid, 'B', dtype=np.float32)
 
-    A.generate(dtype=np.float32)
-    B.generate(dtype=np.float32)
+    A.generate()
+    B.generate()
     C = matmul(A,B)
 
     Ag = A.allGather()

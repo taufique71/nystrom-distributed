@@ -6,7 +6,7 @@ from randomgen import Xoroshiro128
 from numpy.random import Generator
 
 class ParMat:
-    def __init__(self, m, n, grid, frontFace):
+    def __init__(self, m, n, grid, frontFace, dtype=np.float64):
         self.nRowGlobal = m
         self.nColGlobal = n
         self.nRowLocal = None
@@ -89,9 +89,11 @@ class ParMat:
                 self.nColLocal = self.nColLocal - int(self.nColLocal / self.grid.nProcCol) * self.grid.rankInRowWorld
 
         # print(f"globalrank = {self.grid.myrank}, row_rank={self.grid.rowRank}, col_rank={self.grid.colRank}, fib_rank={self.grid.fibRank}, local_mat={self.nRowLocal}x{self.nColLocal}")
-
-    def generate(self, dtype=np.int32):
+        # Allocate buffer and initialize with zero
         self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+
+    def generate(self):
+        # self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
         for idxRowLocal in range(0, self.nRowLocal):
             for idxColLocal in range(0, self.nColLocal):
                 idxRowGlobal = self.localRowStart + idxRowLocal
@@ -101,20 +103,20 @@ class ParMat:
             # print(self.localMat.shape)
             # print(self.localMat)
 
-    def gen_symm_pos_semidef(self, rank=100, dtype=np.float64):
+    def gen_symm_pos_semidef(self, rank=100):
         elements = self.nRowGlobal * rank
         A = np.arange(elements)
         A = A.reshape(self.nRowGlobal, rank)
         A = A @ A.T
-        self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+        # self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
         for idxRowLocal in range(0, self.nRowLocal):
             for idxColLocal in range(0, self.nColLocal):
                 idxRowGlobal = self.localRowStart + idxRowLocal
                 idxColGlobal = self.localColStart + idxColLocal
                 self.localMat[idxRowLocal,idxColLocal] = A[idxRowGlobal,idxColGlobal]
 
-    def generate_rand(self,seed, dtype=np.float64, generator="xoroshiro"):
-        self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+    def generate_rand(self,seed, generator="xoroshiro"):
+        # self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
         prng = None
         if generator == 'xoroshiro':
             prng = Generator(Xoroshiro128(seed, plusplus=False))
