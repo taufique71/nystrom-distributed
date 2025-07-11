@@ -17,7 +17,7 @@ SYSTEM=perlmutter_cpu
 CORE_PER_NODE=128 # Never change. Specific to the system
 PER_NODE_MEMORY=256 # Never change. Specific to the system
 PER_CORE_THREAD=2 # Never change. Specific to the system
-N_NODE=1
+N_NODE=4
 PROC_PER_NODE=8
 N_PROC=$(( $N_NODE * $PROC_PER_NODE ))
 CORE_PER_PROC=$(( $CORE_PER_NODE / $PROC_PER_NODE )) 
@@ -28,8 +28,8 @@ export MKL_NUM_THREADS=$THREAD_PER_PROC
 #export OMP_PLACES=threads
 #export OMP_PROC_BIND=spread
 
-N=10000
-R=1000
+N=50000
+R=5000
 
 MATMUL1_P1=$N_PROC
 MATMUL1_P2=1
@@ -43,8 +43,8 @@ for ALG in nystrom-1d-noredist-1d nystrom-1d-redist-1d
 #for ALG in nystrom-1d-noredist-1d
 #for ALG in nystrom-1d-redist-1d
 do
-    #for IMPL in cpp python
-    for IMPL in cpp
+    for IMPL in cpp python
+    #for IMPL in cpp
     #for IMPL in python 
     do
         echo $ALG, $IMPL
