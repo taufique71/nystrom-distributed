@@ -82,6 +82,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
     }
 
     if(myrank == 0) printf("matmul2 in %dx%dx%d grid\n", Y.grid.nProcRow, Y.grid.nProcCol, Y.grid.nProcFib);
+
     // grid1 and grid2 is same, so does not matter if grid1 and grid2 is used. Using grid2 because the name is relevant for matmul2
     double* contribZ = new double[r*r];
     int OmegaTColOffset = grid2.rowRank * (A.nColGlobal / grid2.nProcRow); // How many columns of BT needs to be moved forward
@@ -178,12 +179,12 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
     MPI_Comm_size(MPI_COMM_WORLD, &nproc);
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 
-    //ParMat Y(n, r, grid2, 'B');
-    //ParMat Z(r, r, grid2, 'C');
     ProcGrid grid1 = A.grid;
     ProcGrid grid2 = Y.grid;
+
     // Compute temporary Y on grid1, then redistribute for matmul2 on grid2
     ParMat Ytemp(A.nRowGlobal, r, grid1, 'C');
+
     if(myrank == 0) printf("matmul1 in %dx%dx%d grid\n", A.grid.nProcRow, A.grid.nProcCol, A.grid.nProcFib);
     
     double* Omega = NULL;
@@ -206,17 +207,17 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
     }
 
     {
-        auto cblas_m = A.nRowLocal;
-        auto cblas_k = A.nColGlobal;
-        auto cblas_n = r;
+        auto cblas_m = A.nRowLocal; // Number of rows of local A
+        auto cblas_k = A.nColLocal; // Number of columns of local A. Local and global are expected to be same due to row distrib
+        auto cblas_n = r; // Number of columns of Omega
         auto cblas_alpha = 1.0;
         auto cblas_beta = 0.0;
-        auto cblas_a = A.localMat;
-        auto cblas_lda = A.nRowLocal;
-        auto cblas_b = Omega;
-        auto cblas_ldb = A.nColGlobal;
-        auto cblas_c = Ytemp.localMat; 
-        auto cblas_ldc = A.nRowLocal; 
+        auto cblas_a = A.localMat; // Local A
+        auto cblas_lda = A.nRowLocal; // Stride length to iterate over the columns of local A
+        auto cblas_b = Omega; // Entire Omega
+        auto cblas_ldb = A.nColLocal; // Stride length to iterate over the columns of Omega
+        auto cblas_c = Ytemp.localMat; // Local Ytemp
+        auto cblas_ldc = A.nRowLocal; // Stride length to iterate over the columns of local A
                                          
         t0 = MPI_Wtime();
 
@@ -254,7 +255,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 
         // TODO: Change according to Scalapack distribution
         // Y has row-wise distribution. Now change to columns-wise distribution on second grid
-        int nColPerProc = Ytemp.nColGlobal / commSize; // Target number of columns by process other than the last process
+        int nColPerProc = Ytemp.nColLocal / commSize; // Target number of columns by process other than the last process
         int *nColToSend = new int[commSize]; // Number of columns to send to each process
         for (int p = 0; p < commSize; p++){
             if ( p < (commSize - 1) ) nColToSend[p] = nColPerProc;
@@ -331,38 +332,38 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         }
     }
 
-	//ParMat Z(r, r, secondGrid, 'C'); // Second grid 
     {
         auto cblas_m = r; // Number of rows of transposed Omega
-        auto cblas_k = A.nRowGlobal; // Number of columns of transposed Omega / number of rows of local Y
+        auto cblas_k = Y.nRowLocal; // Number of columns of transposed Omega / number of rows of local Y after redistribution
         auto cblas_n = Z.nColLocal; // Number of columns of local Y / number of columns of local Z
         auto cblas_alpha = 1.0;
         auto cblas_beta = 0.0;
-        auto cblas_a = Omega; 
-        auto cblas_lda = A.nRowGlobal; // Stride length to iterate over columns of transposed Omega
-        auto cblas_b = Y.localMat;
-        auto cblas_ldb = Y.nRowLocal; // Stride length to iterate over columns of local copy of redistributed Y
-        auto cblas_c = Z.localMat; 
-        auto cblas_ldc = r; 
+        auto cblas_a = Omega; // Entire Omega
+        auto cblas_lda = Y.nRowLocal; // Stride length to iterate over columns of transposed Omega
+                                      // which is equal to the number of rows of local Y after redistribution
+        auto cblas_b = Y.localMat; // Local Y
+        auto cblas_ldb = Y.nRowLocal; // Stride length to iterate over columns of local Y after redistribution
+        auto cblas_c = Z.localMat; // Local Z
+        auto cblas_ldc = r; // Stride length to iterate over columns of local Z
                                          
         t0 = MPI_Wtime();
 
-        //cblas_dgemm(
-            //CblasColMajor, // Column major order. `Layout` parameter of MKL cblas call.
-            //CblasTrans, // A matrix is transpose. `transa` param of MKL cblas call.
-            //CblasNoTrans, // B matrix is not transpose. `transb` param of MKL cblas call.
-            //cblas_m, // Number of rows of A or C. `m` param of MKL cblas call.
-            //cblas_n, // Number of cols of B or C. `n` param of MKL cblas call.
-            //cblas_k, // Inner dimension - number of columns of A or number of rows of B. `k` param of MKL cblas call.
-            //cblas_alpha, // Scalar `alpha` param of MKL cblas call.
-            //cblas_a, // Data buffer of A. `a` param of MKL cblas call.
-            //cblas_lda, // Leading dimension of A. `lda` param of MKL cblas call.
-            //cblas_b, // Data buffer of B. `b` param of MKL cblas call.
-            //cblas_ldb, // Leading dimension of B. `ldb` param of MKL cblas call.
-            //cblas_beta, // Scalar `beta` param of MKL cblas call.
-            //cblas_c, // Data buffer of C. `c` param of MKL cblas call.
-            //cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
-        //);
+        cblas_dgemm(
+            CblasColMajor, // Column major order. `layout` parameter of MKL cblas call.
+            CblasTrans, // A matrix is transpose. `transa` param of MKL cblas call.
+            CblasNoTrans, // B matrix is not transpose. `transb` param of MKL cblas call.
+            cblas_m, // Number of rows of A or C. `m` param of MKL cblas call.
+            cblas_n, // Number of cols of B or C. `n` param of MKL cblas call.
+            cblas_k, // Inner dimension - number of columns of A or number of rows of B. `k` param of MKL cblas call.
+            cblas_alpha, // Scalar `alpha` param of MKL cblas call.
+            cblas_a, // Data buffer of A. `a` param of MKL cblas call.
+            cblas_lda, // Leading dimension of A. `lda` param of MKL cblas call.
+            cblas_b, // Data buffer of B. `b` param of MKL cblas call.
+            cblas_ldb, // Leading dimension of B. `ldb` param of MKL cblas call.
+            cblas_beta, // Scalar `beta` param of MKL cblas call.
+            cblas_c, // Data buffer of C. `c` param of MKL cblas call.
+            cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
+        );
 
         t1 = MPI_Wtime();
         if(myrank == 0){
