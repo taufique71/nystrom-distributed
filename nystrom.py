@@ -157,20 +157,24 @@ def nystrom_1d_redist_1d(A, r, Y, Z):
     if Ytemp.grid.myrank < Ytemp.grid.nprocs - 1:
         recvCols = colsInOtherProc
         sendcounts = [rowsInOtherProc * colsInOtherProc] * (Ytemp.grid.nprocs - 1) + [rowsInOtherProc * colsInLastProc]
+        sendcounts = np.array(sendcounts)
         # sdispls = np.arange(0, rowsInOtherProc * colsInOtherProc * Ytemp.grid.nprocs, rowsInOtherProc * colsInOtherProc)
         sdispls = np.zeros(Ytemp.grid.nprocs, dtype=np.int32)
         np.cumsum(sendcounts[:-1], out=sdispls[1:])
         recvcounts = [rowsInOtherProc * colsInOtherProc] * (Ytemp.grid.nprocs - 1) + [rowsInLastProc * colsInOtherProc]
+        recvcounts = np.array(recvcounts)
         # rdispls = np.arange(0, rowsInOtherProc * colsInOtherProc * Ytemp.grid.nprocs, rowsInOtherProc * colsInOtherProc)
         rdispls = np.zeros(Ytemp.grid.nprocs, dtype=np.int32)
         np.cumsum(recvcounts[:-1], out=rdispls[1:])
     else:
         recvCols = colsInLastProc
         sendcounts = [rowsInLastProc * colsInOtherProc] * (Ytemp.grid.nprocs - 1) + [rowsInLastProc * colsInLastProc]
+        sendcounts = np.array(sendcounts)
         # sdispls = np.arange(0, rowsInLastProc * colsInOtherProc * Ytemp.grid.nprocs, rowsInLastProc * colsInOtherProc)
         sdispls = np.zeros(Ytemp.grid.nprocs, dtype=np.int32)
         np.cumsum(sendcounts[:-1], out=sdispls[1:])
         recvcounts = [rowsInOtherProc * colsInLastProc] * (Ytemp.grid.nprocs - 1) + [rowsInLastProc * colsInLastProc]
+        recvcounts = np.array(recvcounts)
         # rdispls = np.arange(0, rowsInOtherProc * colsInLastProc * Ytemp.grid.nprocs, rowsInOtherProc * colsInLastProc)
         rdispls = np.zeros(Ytemp.grid.nprocs, dtype=np.int32)
         np.cumsum(recvcounts[:-1], out=rdispls[1:])
