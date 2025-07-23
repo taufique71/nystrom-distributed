@@ -4,7 +4,6 @@
 #include <cassert>
 #include <numeric>
 #include <omp.h>
-#include <mkl.h>
 #include "procgrid.h"
 #include "matrix.h"
 #include "nystrom.h"

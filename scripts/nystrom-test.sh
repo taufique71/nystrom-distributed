@@ -13,11 +13,11 @@
 module swap PrgEnv-gnu PrgEnv-intel
 module load python
 
-SYSTEM=perlmutter_cpu
+SYSTEM=perlmutter-cpu
 CORE_PER_NODE=128 # Never change. Specific to the system
 PER_NODE_MEMORY=256 # Never change. Specific to the system
 PER_CORE_THREAD=2 # Never change. Specific to the system
-N_NODE=4
+N_NODE=1
 PROC_PER_NODE=8
 N_PROC=$(( $N_NODE * $PROC_PER_NODE ))
 CORE_PER_PROC=$(( $CORE_PER_NODE / $PROC_PER_NODE )) 
@@ -29,7 +29,7 @@ export MKL_NUM_THREADS=$THREAD_PER_PROC
 #export OMP_PROC_BIND=spread
 
 N=50000
-R=5000
+R=500
 
 MATMUL1_P1=$N_PROC
 MATMUL1_P2=1

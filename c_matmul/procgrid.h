@@ -6,8 +6,6 @@
 #include <vector>
 #include <cassert>
 #include <numeric>
-#include <omp.h>
-#include <mkl.h>
 
 class ProcGrid {
 public:
