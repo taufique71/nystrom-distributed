@@ -1,30 +1,88 @@
-# Find the MPI package
-find_package(MPI REQUIRED)
-find_package(OpenMP REQUIRED)
-find_package(MKL REQUIRED)
-
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+
+# User option to override CUDA usage
+option(USE_CUDA "Enable CUDA/cuBLAS support" OFF)
+
+# Detect NERSC programming environment
+if (DEFINED ENV{PE_ENV})
+    set(PE_ENVIRONMENT $ENV{PE_ENV})
+    message(STATUS "Detected NERSC Programming Environment: ${PE_ENVIRONMENT}")
+	
+	if(${PE_ENVIRONMENT} STREQUAL "NVIDIA")
+        set(USE_CUDA ON)
+    elseif(${PE_ENVIRONMENT} STREQUAL "INTEL")
+        set(USE_CUDA OFF)
+    endif()
+
+endif()
+
+# Find MPI (required)
+find_package(MPI REQUIRED)
+if (MPI_FOUND)
+	message(STATUS "MPI found: ${MPI_CXX_COMPILER}")
+	include_directories(${MPI_INCLUDE_PATH})
+else()
+	message(FATAL_ERROR "MPI not found")
+endif()
+
+
+# Find OpenMP (required)
+find_package(OpenMP REQUIRED)
+if (OpenMP_FOUND)
+	message(STATUS "OpenMP found: ${MPI_CXX_COMPILER}")
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+else()
+	message(FATAL_ERROR "OpenMP not found")
+endif()
+
+# Configure BLAS backend (required)
+if (USE_CUDA)
+	find_package(CUDA REQUIRED)
+	if (CUDA_FOUND)
+		add_definitions(-DUSE_CUBLAS)
+		include_directories(${CUDA_INCLUDE_DIRS})
+		link_libraries(${CUDA_LIBRARIES} cublas)
+		enable_language(CUDA)
+		message(STATUS "Using cuBLAS (CUDA)")
+	else()
+		message(FATAL_ERROR "CUDA not found")
+	endif()
+
+else()
+	find_package(MKL REQUIRED)
+	if (MKL_FOUND)
+		add_definitions(-DUSE_MKL)
+		include_directories(${MKL_INCLUDE_DIRS})
+		link_libraries(${MKL_LIBRARIES})
+		message(STATUS "Using MKL (CPU)")
+	else()
+		message(FATAL_ERROR "MKL not found")
+	endif()
+
+endif()
+
+
 
 # Add the executable
 add_executable(matmul matmul.cpp)
 add_executable(nystrom nystrom.cpp)
 add_executable(prng_test prng_test.cpp)
+add_executable(cublas-test cublas-test.cpp)
 
-# Link the MPI libraries
-target_link_libraries(matmul MPI::MPI_CXX)
-target_link_libraries(nystrom MPI::MPI_CXX)
-
-# Link OpenMP
-if(OpenMP_CXX_FOUND)
-    target_link_libraries(matmul OpenMP::OpenMP_CXX)
-    target_link_libraries(nystrom OpenMP::OpenMP_CXX)
-    target_link_libraries(prng_test OpenMP::OpenMP_CXX)
+if (USE_CUDA)
+    target_link_libraries(matmul OpenMP::OpenMP_CXX MPI::MPI_CXX ${CUDA_LIBRARIES} cublas)
+    target_link_libraries(nystrom OpenMP::OpenMP_CXX MPI::MPI_CXX ${CUDA_LIBRARIES} cublas)
+    target_link_libraries(prng_test OpenMP::OpenMP_CXX ${CUDA_LIBRARIES})
+    target_link_libraries(cublas-test OpenMP::OpenMP_CXX ${CUDA_LIBRARIES})
+else()
+    target_link_libraries(matmul OpenMP::OpenMP_CXX MPI::MPI_CXX ${MKL_LIBRARIES})
+    target_link_libraries(nystrom OpenMP::OpenMP_CXX MPI::MPI_CXX ${MKL_LIBRARIES})
+    target_link_libraries(prng_test OpenMP::OpenMP_CXX ${MKL_LIBRARIES})
+    target_link_libraries(cublas-test OpenMP::OpenMP_CXX ${MKL_LIBRARIES})
 endif()
 
-# Link MKL
-if(MKL_FOUND)
-    target_link_libraries(matmul ${MKL_LIBRARIES})
-    target_link_libraries(nystrom ${MKL_LIBRARIES})
-endif()
+# Debug message to check the value of USE_CUDA
+message(STATUS "USE_CUDA is set to: ${USE_CUDA}")

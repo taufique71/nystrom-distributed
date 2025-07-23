@@ -1,6 +1,19 @@
 #ifndef NYSTROM_H
 #define NYSTROM_H
 
+//#include <mpi.h>
+//#include <iostream>
+//#include <vector>
+//#include <cassert>
+//#include <numeric>
+//#include <algorithm>
+//#include <cstring>
+//#include <omp.h>
+//#include <mkl.h>
+//#include "procgrid.h"
+//#include "matrix.h"
+//#include "prng.h"
+
 #include <mpi.h>
 #include <iostream>
 #include <vector>
@@ -9,7 +22,12 @@
 #include <algorithm>
 #include <cstring>
 #include <omp.h>
+#if defined(USE_CUBLAS)
+#include <cublas_v2.h>
+#include <cuda_runtime.h>
+#else
 #include <mkl.h>
+#endif
 #include "procgrid.h"
 #include "matrix.h"
 #include "prng.h"
@@ -55,7 +73,47 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         auto cblas_ldb = A.nColGlobal;
         auto cblas_c = Y.localMat; 
         auto cblas_ldc = A.nRowLocal; 
-                                         
+
+#if defined(USE_CUBLAS)
+		double tMemMove = 0;
+		double tDgemm = 0;
+		t0 = MPI_Wtime();
+		double *d_A, *d_B, *d_C;
+		cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
+		cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
+		cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
+		cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
+		cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+		cublasHandle_t handle;
+		cublasCreate(&handle);
+		cublasOperation_t transA = CUBLAS_OP_N;
+		cublasOperation_t transB = CUBLAS_OP_N;
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+		
+
+		t0 = MPI_Wtime();
+		cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+					&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+					&cblas_beta, d_C, cblas_ldc);
+		t1 = MPI_Wtime();
+		tDgemm += (t1-t0);
+
+		t0 = MPI_Wtime();
+		cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+		cublasDestroy(handle);
+		cudaFree(d_A);
+		cudaFree(d_B);
+		cudaFree(d_C);
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+
+        if(myrank == 0){
+            printf("Time for first dgemm host-device mem movement: %lf sec\n", tMemMove);
+            printf("Time for first dgemm: %lf sec\n", tDgemm);
+        }
+#else
         t0 = MPI_Wtime();
 
         cblas_dgemm(
@@ -79,6 +137,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         if(myrank == 0){
             printf("Time for first dgemm: %lf sec\n", t1-t0);
         }
+#endif
     }
 
     if(myrank == 0) printf("matmul2 in %dx%dx%d grid\n", Y.grid.nProcRow, Y.grid.nProcCol, Y.grid.nProcFib);
@@ -100,7 +159,47 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         auto cblas_ldb = Y.nRowLocal;
         auto cblas_c = contribZ; 
         auto cblas_ldc = r; 
-                                         
+
+#if defined(USE_CUBLAS)
+		double tMemMove = 0;
+		double tDgemm = 0;
+		t0 = MPI_Wtime();
+		double *d_A, *d_B, *d_C;
+		cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
+		cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
+		cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
+		cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
+		cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+		cublasHandle_t handle;
+		cublasCreate(&handle);
+		cublasOperation_t transA = CUBLAS_OP_N;
+		cublasOperation_t transB = CUBLAS_OP_N;
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+		
+
+		t0 = MPI_Wtime();
+		cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+					&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+					&cblas_beta, d_C, cblas_ldc);
+		t1 = MPI_Wtime();
+		tDgemm += (t1-t0);
+
+		t0 = MPI_Wtime();
+		cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+		cublasDestroy(handle);
+		cudaFree(d_A);
+		cudaFree(d_B);
+		cudaFree(d_C);
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+
+        if(myrank == 0){
+            printf("Time for second dgemm host-device mem movement: %lf sec\n", tMemMove);
+            printf("Time for second dgemm: %lf sec\n", tDgemm);
+        }
+#else
         t0 = MPI_Wtime();
 
         cblas_dgemm(
@@ -124,6 +223,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         if(myrank == 0){
             printf("Time for second dgemm: %lf sec\n", t1-t0);
         }
+#endif
     }
 
     //ParMat Z(r, r, grid, 'B'); // B face for column split distrib of Z
@@ -218,6 +318,47 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         auto cblas_ldb = A.nColLocal; // Stride length to iterate over the columns of Omega
         auto cblas_c = Ytemp.localMat; // Local Ytemp
         auto cblas_ldc = A.nRowLocal; // Stride length to iterate over the columns of local A
+
+#if defined(USE_CUBLAS)
+		double tMemMove = 0;
+		double tDgemm = 0;
+		t0 = MPI_Wtime();
+		double *d_A, *d_B, *d_C;
+		cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
+		cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
+		cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
+		cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
+		cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+		cublasHandle_t handle;
+		cublasCreate(&handle);
+		cublasOperation_t transA = CUBLAS_OP_N;
+		cublasOperation_t transB = CUBLAS_OP_N;
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+		
+
+		t0 = MPI_Wtime();
+		cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+					&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+					&cblas_beta, d_C, cblas_ldc);
+		t1 = MPI_Wtime();
+		tDgemm += (t1-t0);
+
+		t0 = MPI_Wtime();
+		cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+		cublasDestroy(handle);
+		cudaFree(d_A);
+		cudaFree(d_B);
+		cudaFree(d_C);
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+
+        if(myrank == 0){
+            printf("Time for first dgemm host-device mem movement: %lf sec\n", tMemMove);
+            printf("Time for first dgemm: %lf sec\n", tDgemm);
+        }
+#else
                                          
         t0 = MPI_Wtime();
 
@@ -242,6 +383,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         if(myrank == 0){
             printf("Time for first dgemm: %lf sec\n", t1-t0);
         }
+#endif
     }
 
     if(myrank == 0) printf("matmul2 in %dx%dx%d grid\n", Y.grid.nProcRow, Y.grid.nProcCol, Y.grid.nProcFib);
@@ -345,6 +487,47 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         auto cblas_ldb = Y.nRowLocal; // Stride length to iterate over columns of local Y after redistribution
         auto cblas_c = Z.localMat; // Local Z
         auto cblas_ldc = r; // Stride length to iterate over columns of local Z
+
+#if defined(USE_CUBLAS)
+		double tMemMove = 0;
+		double tDgemm = 0;
+		t0 = MPI_Wtime();
+		double *d_A, *d_B, *d_C;
+		cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
+		cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
+		cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
+		cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
+		cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
+		cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+		cublasHandle_t handle;
+		cublasCreate(&handle);
+		cublasOperation_t transA = CUBLAS_OP_N;
+		cublasOperation_t transB = CUBLAS_OP_N;
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+		
+
+		t0 = MPI_Wtime();
+		cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+					&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+					&cblas_beta, d_C, cblas_ldc);
+		t1 = MPI_Wtime();
+		tDgemm += (t1-t0);
+
+		t0 = MPI_Wtime();
+		cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+		cublasDestroy(handle);
+		cudaFree(d_A);
+		cudaFree(d_B);
+		cudaFree(d_C);
+		t1 = MPI_Wtime();
+		tMemMove += (t1-t0);
+
+        if(myrank == 0){
+            printf("Time for second dgemm host-device mem movement: %lf sec\n", tMemMove);
+            printf("Time for second dgemm: %lf sec\n", tDgemm);
+        }
+#else
                                          
         t0 = MPI_Wtime();
 
@@ -369,6 +552,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         if(myrank == 0){
             printf("Time for second dgemm: %lf sec\n", t1-t0);
         }
+#endif
     }
 
     delete[] Omega;

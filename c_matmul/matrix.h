@@ -7,7 +7,32 @@
 #include <cassert>
 #include <numeric>
 #include <omp.h>
-#include <mkl.h>
+
+#ifdef USE_CUBLAS
+	#include <cublas_v2.h>
+	#include <cuda_runtime.h>
+	#define CHECK_CUDA(call)                                                   \
+    do {                                                                      \
+      cudaError_t err = (call);                                              \
+      if (err != cudaSuccess) {                                              \
+        fprintf(stderr, "CUDA err %s:%d: %s\n", __FILE__, __LINE__,           \
+                cudaGetErrorString(err));                                     \
+        exit(EXIT_FAILURE);                                                   \
+      }                                                                       \
+    } while(0)
+
+  	#define CHECK_CUBLAS(call)                                                 \
+    do {                                                                      \
+      cublasStatus_t st = (call);                                            \
+      if (st != CUBLAS_STATUS_SUCCESS) {                                      \
+        fprintf(stderr, "cuBLAS err %s:%d: %d\n", __FILE__, __LINE__, st);    \
+        exit(EXIT_FAILURE);                                                   \
+      }                                                                       \
+    } while(0)
+#else
+	#include <mkl.h>
+#endif
+
 #include "procgrid.h"
 #include "prng.h"
 
@@ -207,12 +232,6 @@ ParMat matmul(ParMat& A, ParMat& B){
 
         // Gather the number of columns from all processes in the grid columns
         MPI_Allgather(&nColToSend, 1, MPI_INT, nColToRecv, 1, MPI_INT, grid.colWorld);
-        
-        //std::cout << myrank << ": ncolToRecv ";
-        //for(int i = 0; i < commSize; i++){
-            //std::cout << nColToRecv[i] << " " ;
-        //}
-        //std::cout << std::endl;
 
         // Calculate the number of values to receive based on the number of rows in B
         int* nValToRecv = new int[commSize];
@@ -222,24 +241,12 @@ ParMat matmul(ParMat& A, ParMat& B){
             nColRecvB = nColRecvB + nColToRecv[i];
         }
 
-        //std::cout << myrank << ": nValToRecv ";
-        //for(int i = 0; i < commSize; i++){
-            //std::cout << nValToRecv[i] << " " ;
-        //}
-        //std::cout << std::endl;
-
         // Prepare displacements for the received data
         int* recvDispls = new int[commSize + 1];
         recvDispls[0] = 0;
         std::partial_sum(nValToRecv, nValToRecv + commSize, recvDispls + 1);
         recvB = new double[recvDispls[commSize]]; // Allocate for received B matrix
        
-        //std::cout << myrank << ": recvDispls ";
-        //for(int i = 0; i < commSize+1; i++){
-            //std::cout << recvDispls[i] << " " ;
-        //}
-        //std::cout << std::endl;
-
         // Perform the Allgatherv operation to collect B matrix columns
         MPI_Allgatherv(B.localMat, B.nRowLocal * B.nColLocal, MPI_DOUBLE, recvB, nValToRecv, recvDispls, MPI_DOUBLE, grid.colWorld);
 
@@ -259,17 +266,60 @@ ParMat matmul(ParMat& A, ParMat& B){
 
     multC = new double[A.nRowLocal * nColRecvB];
 
-    size_t cblas_m = A.nRowLocal;
-    size_t cblas_k = nColRecvA;
-    size_t cblas_n = nColRecvB;
-    float cblas_alpha = 1.0;
-    float cblas_beta = 0.0;
-    auto cblas_a = recvA;
-    auto cblas_lda = A.nRowLocal;
-    auto cblas_b = recvB;
-    auto cblas_ldb = B.nRowLocal;
-    auto cblas_c = multC; 
-    auto cblas_ldc = cblas_lda; // Number of rows of the matrix
+    int cblas_m = A.nRowLocal;
+    int cblas_k = nColRecvA;
+    int cblas_n = nColRecvB;
+    double cblas_alpha = 1.0;
+    double cblas_beta = 0.0;
+    double* cblas_a = recvA;
+    int cblas_lda = A.nRowLocal;
+    double* cblas_b = recvB;
+    int cblas_ldb = B.nRowLocal;
+    double* cblas_c = multC; 
+    int cblas_ldc = cblas_lda; // Number of rows of the matrix
+
+#ifdef USE_CUBLAS
+	double tMemMove = 0;
+	double tDgemm = 0;
+	t0 = MPI_Wtime();
+	double *d_A, *d_B, *d_C;
+	cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k);
+	cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n);
+	cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n);
+	cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
+	cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+	cublasOperation_t transA = CUBLAS_OP_N;
+	cublasOperation_t transB = CUBLAS_OP_N;
+	t1 = MPI_Wtime();
+	tMemMove += (t1-t0);
+	
+
+	t0 = MPI_Wtime();
+	CHECK_CUBLAS(
+	cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+				&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+				&cblas_beta, d_C, cblas_ldc)
+	);
+	t1 = MPI_Wtime();
+	tDgemm += (t1-t0);
+
+	t0 = MPI_Wtime();
+	cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+	cublasDestroy(handle);
+	cudaFree(d_A);
+	cudaFree(d_B);
+	cudaFree(d_C);
+	t1 = MPI_Wtime();
+	tMemMove += (t1-t0);
+
+	if(myrank == 0){
+		printf("Time for local multiply host-device mem movement: %lf sec\n", tMemMove);
+		printf("Time for local multiply: %lf sec\n", tDgemm);
+	}
+#else
                                      
     t0 = MPI_Wtime();
 
@@ -294,6 +344,7 @@ ParMat matmul(ParMat& A, ParMat& B){
     if(myrank == 0){
         printf("Time for local multiply: %lf sec\n", t1-t0);
     }
+#endif
 
     {
         int commSize = 0;
@@ -390,6 +441,47 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
     auto cblas_ldb = B.nRowGlobal;
     auto cblas_c = multC; 
     auto cblas_ldc = cblas_lda; // Number of rows of the matrix
+
+#if defined(USE_CUBLAS)
+	double tMemMove = 0;
+	double tDgemm = 0;
+	t0 = MPI_Wtime();
+	double *d_A, *d_B, *d_C;
+	cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
+	cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
+	cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
+	cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
+	cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+	cublasOperation_t transA = CUBLAS_OP_N;
+	cublasOperation_t transB = CUBLAS_OP_N;
+	t1 = MPI_Wtime();
+	tMemMove += (t1-t0);
+	
+
+	t0 = MPI_Wtime();
+	cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+				&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+				&cblas_beta, d_C, cblas_ldc);
+	t1 = MPI_Wtime();
+	tDgemm += (t1-t0);
+
+	t0 = MPI_Wtime();
+	cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+	cublasDestroy(handle);
+	cudaFree(d_A);
+	cudaFree(d_B);
+	cudaFree(d_C);
+	t1 = MPI_Wtime();
+	tMemMove += (t1-t0);
+
+	if(myrank == 0){
+		printf("Time for local multiply host-device mem movement: %lf sec\n", tMemMove);
+		printf("Time for local multiply: %lf sec\n", tDgemm);
+	}
+#else
                                      
     t0 = MPI_Wtime();
 
@@ -414,6 +506,7 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
     if(myrank == 0){
         printf("Time for local multiply: %lf sec\n", t1-t0);
     }
+#endif
 
     delete[] recvB;
 
@@ -512,6 +605,47 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
     auto cblas_ldb = B.nRowGlobal;
     auto cblas_c = multC; 
     auto cblas_ldc = cblas_lda; // Number of rows of the matrix
+
+#if defined(USE_CUBLAS)
+	double tMemMove = 0;
+	double tDgemm = 0;
+	t0 = MPI_Wtime();
+	double *d_A, *d_B, *d_C;
+	cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
+	cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
+	cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
+	cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
+	cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
+	cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+	cublasOperation_t transA = CUBLAS_OP_N;
+	cublasOperation_t transB = CUBLAS_OP_N;
+	t1 = MPI_Wtime();
+	tMemMove += (t1-t0);
+	
+
+	t0 = MPI_Wtime();
+	cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+				&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+				&cblas_beta, d_C, cblas_ldc);
+	t1 = MPI_Wtime();
+	tDgemm += (t1-t0);
+
+	t0 = MPI_Wtime();
+	cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+	cublasDestroy(handle);
+	cudaFree(d_A);
+	cudaFree(d_B);
+	cudaFree(d_C);
+	t1 = MPI_Wtime();
+	tMemMove += (t1-t0);
+
+	if(myrank == 0){
+		printf("Time for local multiply host-device mem movement: %lf sec\n", tMemMove);
+		printf("Time for local multiply: %lf sec\n", tDgemm);
+	}
+#else
                                      
     t0 = MPI_Wtime();
 
@@ -536,6 +670,7 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
     if(myrank == 0){
         printf("Time for local multiply: %lf sec\n", t1-t0);
     }
+#endif
 
     delete[] recvB;
 
