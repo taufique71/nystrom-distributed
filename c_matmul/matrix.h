@@ -11,24 +11,15 @@
 #ifdef USE_CUBLAS
 	#include <cublas_v2.h>
 	#include <cuda_runtime.h>
-	#define CHECK_CUDA(call)                                                   \
-    do {                                                                      \
-      cudaError_t err = (call);                                              \
-      if (err != cudaSuccess) {                                              \
-        fprintf(stderr, "CUDA err %s:%d: %s\n", __FILE__, __LINE__,           \
-                cudaGetErrorString(err));                                     \
-        exit(EXIT_FAILURE);                                                   \
-      }                                                                       \
-    } while(0)
 
-  	#define CHECK_CUBLAS(call)                                                 \
-    do {                                                                      \
-      cublasStatus_t st = (call);                                            \
-      if (st != CUBLAS_STATUS_SUCCESS) {                                      \
-        fprintf(stderr, "cuBLAS err %s:%d: %d\n", __FILE__, __LINE__, st);    \
-        exit(EXIT_FAILURE);                                                   \
-      }                                                                       \
-    } while(0)
+	#define CUDA_CHECK(call) {  \
+		cudaError_t err = call; \
+		if (err != cudaSuccess) { \
+            fprintf(stderr, "CUDA error: %s\n",         \
+                cudaGetErrorString(err));        \
+			exit(err); \
+		} \
+	}
 #else
 	#include <mkl.h>
 #endif
@@ -283,12 +274,13 @@ ParMat matmul(ParMat& A, ParMat& B){
 	double tDgemm = 0;
 	t0 = MPI_Wtime();
 	double *d_A, *d_B, *d_C;
-	cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k);
-	cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n);
-	cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n);
-	cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
-	cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+    cudaError_t err;
+	CUDA_CHECK(cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k));
+	CUDA_CHECK(cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n));
+	CUDA_CHECK(cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n));
+	CUDA_CHECK(cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n));
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 	cublasOperation_t transA = CUBLAS_OP_N;
@@ -298,16 +290,14 @@ ParMat matmul(ParMat& A, ParMat& B){
 	
 
 	t0 = MPI_Wtime();
-	CHECK_CUBLAS(
-	cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
-				&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
-				&cblas_beta, d_C, cblas_ldc)
-	);
+    cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+                &cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+                &cblas_beta, d_C, cblas_ldc);
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
 	t0 = MPI_Wtime();
-	cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+	CUDA_CHECK(cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost));
 	cublasDestroy(handle);
 	cudaFree(d_A);
 	cudaFree(d_B);
@@ -316,7 +306,7 @@ ParMat matmul(ParMat& A, ParMat& B){
 	tMemMove += (t1-t0);
 
 	if(myrank == 0){
-		printf("Time for local multiply host-device mem movement: %lf sec\n", tMemMove);
+		printf("Time for host-device mem movement: %lf sec\n", tMemMove);
 		printf("Time for local multiply: %lf sec\n", tDgemm);
 	}
 #else
@@ -442,17 +432,18 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
     auto cblas_c = multC; 
     auto cblas_ldc = cblas_lda; // Number of rows of the matrix
 
-#if defined(USE_CUBLAS)
+#ifdef USE_CUBLAS
 	double tMemMove = 0;
 	double tDgemm = 0;
 	t0 = MPI_Wtime();
 	double *d_A, *d_B, *d_C;
-	cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
-	cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
-	cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
-	cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
-	cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+    cudaError_t err;
+	CUDA_CHECK(cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k));
+	CUDA_CHECK(cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n));
+	CUDA_CHECK(cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n));
+	CUDA_CHECK(cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n));
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 	cublasOperation_t transA = CUBLAS_OP_N;
@@ -462,14 +453,14 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
 	
 
 	t0 = MPI_Wtime();
-	cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
-				&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
-				&cblas_beta, d_C, cblas_ldc);
+    cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+                &cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+                &cblas_beta, d_C, cblas_ldc);
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
 	t0 = MPI_Wtime();
-	cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+	CUDA_CHECK(cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost));
 	cublasDestroy(handle);
 	cudaFree(d_A);
 	cudaFree(d_B);
@@ -478,7 +469,7 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
 	tMemMove += (t1-t0);
 
 	if(myrank == 0){
-		printf("Time for local multiply host-device mem movement: %lf sec\n", tMemMove);
+		printf("Time for host-device mem movement: %lf sec\n", tMemMove);
 		printf("Time for local multiply: %lf sec\n", tDgemm);
 	}
 #else
@@ -606,17 +597,18 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
     auto cblas_c = multC; 
     auto cblas_ldc = cblas_lda; // Number of rows of the matrix
 
-#if defined(USE_CUBLAS)
+#ifdef USE_CUBLAS
 	double tMemMove = 0;
 	double tDgemm = 0;
 	t0 = MPI_Wtime();
 	double *d_A, *d_B, *d_C;
-	cudaMalloc((void**)&d_A, sizeof(double) * cblas_lda * cblas_k);
-	cudaMalloc((void**)&d_B, sizeof(double) * cblas_ldb * cblas_n);
-	cudaMalloc((void**)&d_C, sizeof(double) * cblas_ldc * cblas_n);
-	cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice);
-	cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n);
+    cudaError_t err;
+	CUDA_CHECK(cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k));
+	CUDA_CHECK(cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n));
+	CUDA_CHECK(cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n));
+	CUDA_CHECK(cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice));
+	CUDA_CHECK(cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n));
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 	cublasOperation_t transA = CUBLAS_OP_N;
@@ -626,14 +618,14 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
 	
 
 	t0 = MPI_Wtime();
-	cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
-				&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
-				&cblas_beta, d_C, cblas_ldc);
+    cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+                &cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
+                &cblas_beta, d_C, cblas_ldc);
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
 	t0 = MPI_Wtime();
-	cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
+	CUDA_CHECK(cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost));
 	cublasDestroy(handle);
 	cudaFree(d_A);
 	cudaFree(d_B);
@@ -642,7 +634,7 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
 	tMemMove += (t1-t0);
 
 	if(myrank == 0){
-		printf("Time for local multiply host-device mem movement: %lf sec\n", tMemMove);
+		printf("Time for host-device mem movement: %lf sec\n", tMemMove);
 		printf("Time for local multiply: %lf sec\n", tDgemm);
 	}
 #else

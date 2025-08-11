@@ -7,11 +7,18 @@
 #ifdef USE_CUBLAS
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
+#define CUDA_CHECK(call) { \
+    cudaError_t err = call; \
+    if (err != cudaSuccess) { \
+        std::cerr << "CUDA error in " << __FILE__ << " at line " << __LINE__ << ": " << cudaGetErrorString(err) << std::endl; \
+        exit(err); \
+    } \
+}
 #else
 #include <mkl.h>
 #endif
 
-#include "procgrid.h"
+//#include "procgrid.h"
 #include "prng.h"
 using namespace std;
 
@@ -42,9 +49,10 @@ int main(int argc, char* argv[]) {
 	double tMemMove = 0;
 	double tDgemm = 0;
 
-	t0 = MPI_Wtime();
+	//t0 = MPI_Wtime();
 	double *d_A, *d_B, *d_C;
-	cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k);
+    cudaError_t err;
+	err = cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k);
 	cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n);
 	cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n);
 	cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice);
@@ -54,30 +62,30 @@ int main(int argc, char* argv[]) {
 	cublasCreate(&handle);
 	cublasOperation_t transA = CUBLAS_OP_N;
 	cublasOperation_t transB = CUBLAS_OP_N;
-	t1 = MPI_Wtime();
+	//t1 = MPI_Wtime();
 	tMemMove += (t1-t0);
 
-	t0 = MPI_Wtime();
+	//t0 = MPI_Wtime();
 	cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
 				&cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
 				&cblas_beta, d_C, cblas_ldc);
-	t1 = MPI_Wtime();
+	//t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
-	t0 = MPI_Wtime();
+	//t0 = MPI_Wtime();
 	cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost);
 	cublasDestroy(handle);
 	cudaFree(d_A);
 	cudaFree(d_B);
 	cudaFree(d_C);
-	t1 = MPI_Wtime();
+	//t1 = MPI_Wtime();
 	tMemMove += (t1-t0);
 
 		printf("Time for local multiply host-device mem movement: %lf sec\n", tMemMove);
 		printf("Time for local multiply: %lf sec\n", tDgemm);
 #else
                                      
-    t0 = MPI_Wtime();
+    //t0 = MPI_Wtime();
 
     cblas_dgemm(
         CblasColMajor, // Column major order. `Layout` parameter of MKL cblas call.
@@ -96,7 +104,7 @@ int main(int argc, char* argv[]) {
         cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
     );
 
-    t1 = MPI_Wtime();
+    //t1 = MPI_Wtime();
         printf("Time for local multiply: %lf sec\n", t1-t0);
 #endif
 
