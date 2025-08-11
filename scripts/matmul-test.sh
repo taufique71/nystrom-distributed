@@ -1,18 +1,21 @@
 #!/bin/bash -l
 
 #SBATCH -q debug 
+
 #SBATCH -C cpu
+##SBATCH --gpus-per-node=4
+
 #SBATCH -A m4293 # Sparsitute project (A Mathematical Institute for Sparse Computations in Science and Engineering)
 
-#SBATCH -t 0:10:00
+#SBATCH -t 0:05:00
 
-#SBATCH -N 8
+#SBATCH -N 1
 #SBATCH -J matmul
 #SBATCH -o slurm.matmul.o%j
 
 # https://docs.nersc.gov/systems/perlmutter/architecture/
-SYSTEM=perlmutter-gpu
-N_NODE=4
+SYSTEM=perlmutter-cpu
+N_NODE=1
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
 	# https://docs.nersc.gov/systems/perlmutter/architecture/#cpu-nodes
@@ -22,7 +25,7 @@ if [ "$SYSTEM" == "perlmutter-cpu" ]; then
 
 	CORE_PER_NODE=128 # 2 CPUs. 64 cores per CPU. Never change. Specific to the system
 	PER_NODE_MEMORY=512 # Never change. Specific to the system
-	PROC_PER_NODE=8 # 2 sockets for 2 CPUs. 4 NUMA domains per socket.
+	PROC_PER_NODE=4 # 2 sockets for 2 CPUs. 4 NUMA domains per socket.
 elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
 	# https://docs.nersc.gov/systems/perlmutter/architecture/#gpu-nodes
 
@@ -43,13 +46,13 @@ export MKL_NUM_THREADS=$THREAD_PER_PROC
 P1=1
 P2=1
 P3=1
-N1=10000
-N2=10000
-N3=10000
+N1=50000
+N2=50000
+N3=5000
 
 #for ALG in [ "matmul", "matmul1gen", "matmul1comm" ]; do
-for ALG in matmul
-#for ALG in matmul1gen matmul1comm 
+#for ALG in matmul
+for ALG in matmul1gen matmul1comm 
 do
     #for IMPL in cpp python
 	for IMPL in cpp
@@ -106,8 +109,13 @@ do
         #STDOUT_FILE=$SCRATCH/nystrom/"$ALG"_"$IMPL"_"$N_NODE"_"$N_PROC"_"$P1"x"$P2"x"$P3"
         STDOUT_FILE=$SCRATCH/nystrom/matmul_benchmarking/"$ALG"_"$IMPL"_"$SYSTEM"_"$N_NODE"_"$N_PROC"_"$THREAD_PER_PROC"_"$N1"_"$N2"_"$N3"_"$P1"x"$P2"x"$P3"
 
-        PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
-        BIN=$HOME/Codes/nystrom-distributed/build/c_matmul/matmul
+        if [ "$SYSTEM" == "perlmutter-cpu" ]; then
+            PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
+            BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/matmul
+        elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
+            PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
+            BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/matmul
+        fi
 
         if [ "$IMPL" == "cpp" ]; then
 			srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
