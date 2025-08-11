@@ -3,3 +3,4 @@ build_cpu/
 build_gpu/
 __pycache__/
 blah.txt
+slurm.*
