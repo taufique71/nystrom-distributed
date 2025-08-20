@@ -1,20 +1,20 @@
 #!/bin/bash -l
 
-#SBATCH -q debug 
+#SBATCH -q regular 
 
-#SBATCH -C cpu
-##SBATCH --gpus-per-node=4
+#SBATCH -C gpu
+#SBATCH --gpus-per-node=4
 
 #SBATCH -A m4293 # Sparsitute project (A Mathematical Institute for Sparse Computations in Science and Engineering)
 
-#SBATCH -t 0:05:00
+#SBATCH -t 0:10:00
 
 #SBATCH -N 1
 #SBATCH -J matmul
 #SBATCH -o slurm.matmul.o%j
 
 # https://docs.nersc.gov/systems/perlmutter/architecture/
-SYSTEM=perlmutter-cpu
+SYSTEM=perlmutter-gpu-cpu
 N_NODE=1
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
@@ -35,7 +35,16 @@ elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
 	CORE_PER_NODE=64 # 1 CPU, 64 cores per CPU. Never change. Specific to the system
 	PER_NODE_MEMORY=256 # Never change. Specific to the system
 	PROC_PER_NODE=4 # 1 process per GPU, 4 GPU per node
+elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
+
+    module swap PrgEnv-gnu PrgEnv-intel
+	module load python
+
+	CORE_PER_NODE=64 # 1 CPU, 64 cores per CPU. Never change. Specific to the system
+	PER_NODE_MEMORY=256 # Never change. Specific to the system
+	PROC_PER_NODE=4 # 1 process per GPU, 4 GPU per node
 fi
+
 N_PROC=$(( $N_NODE * $PROC_PER_NODE ))
 CORE_PER_PROC=$(( $CORE_PER_NODE / $PROC_PER_NODE )) 
 THREAD_PER_PROC=$(( $CORE_PER_PROC * 2 )) # 2 logical core per physical core. IMPORTANT for mem access within NUMA domain.
@@ -115,6 +124,9 @@ do
         elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
             PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
             BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/matmul
+        elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
+            PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
+            BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/matmul
         fi
 
         if [ "$IMPL" == "cpp" ]; then
