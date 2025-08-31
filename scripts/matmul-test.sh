@@ -14,7 +14,9 @@
 #SBATCH -o slurm.matmul.o%j
 
 # https://docs.nersc.gov/systems/perlmutter/architecture/
+#SYSTEM=perlmutter-cpu
 SYSTEM=perlmutter-gpu-cpu
+#SYSTEM=perlmutter-gpu
 N_NODE=1
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
@@ -31,6 +33,10 @@ elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
 
 	module swap PrgEnv-gnu PrgEnv-nvidia
 	module load python
+    module load cudatoolkit
+    module load craype-accel-nvidia80
+    
+    export MPICH_GPU_SUPPORT_ENABLED=1
 
 	CORE_PER_NODE=64 # 1 CPU, 64 cores per CPU. Never change. Specific to the system
 	PER_NODE_MEMORY=256 # Never change. Specific to the system
@@ -59,7 +65,6 @@ N1=50000
 N2=50000
 N3=5000
 
-#for ALG in [ "matmul", "matmul1gen", "matmul1comm" ]; do
 #for ALG in matmul
 for ALG in matmul1gen matmul1comm 
 do
@@ -117,6 +122,7 @@ do
 
         #STDOUT_FILE=$SCRATCH/nystrom/"$ALG"_"$IMPL"_"$N_NODE"_"$N_PROC"_"$P1"x"$P2"x"$P3"
         STDOUT_FILE=$SCRATCH/nystrom/matmul_benchmarking/"$ALG"_"$IMPL"_"$SYSTEM"_"$N_NODE"_"$N_PROC"_"$THREAD_PER_PROC"_"$N1"_"$N2"_"$N3"_"$P1"x"$P2"x"$P3"
+        echo $STDOUT_FILE
 
         if [ "$SYSTEM" == "perlmutter-cpu" ]; then
             PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
