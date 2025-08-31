@@ -11,15 +11,26 @@
 #ifdef USE_CUBLAS
 	#include <cublas_v2.h>
 	#include <cuda_runtime.h>
+    #include <curand_kernel.h>
+    #include <curand.h>
 
-	#define CUDA_CHECK(call) {  \
-		cudaError_t err = call; \
-		if (err != cudaSuccess) { \
-            fprintf(stderr, "CUDA error: %s\n",         \
-                cudaGetErrorString(err));        \
-			exit(err); \
-		} \
-	}
+    #define CUDA_CHECK(call) { \
+        cudaError_t err = call; \
+        if (err != cudaSuccess) { \
+            std::cerr << "CUDA error in " << __FILE__ << " at line " << __LINE__ << ": " << cudaGetErrorString(err) << std::endl; \
+            exit(err); \
+        } \
+    }
+
+    // CURAND API error checking
+    #define CURAND_CHECK(err)                                                      \
+    do {                                                                         \
+        curandStatus_t err_ = (err);                                               \
+        if (err_ != CURAND_STATUS_SUCCESS) {                                       \
+            std::printf("curand error %d at %s:%d\n", err_, __FILE__, __LINE__);     \
+            throw std::runtime_error("curand error");                                \
+        }                                                                          \
+    } while (0)
 #else
 	#include <mkl.h>
 #endif
@@ -105,16 +116,38 @@ public:
         //std::cout << nRowLocal << "x" << nColLocal << ", " << sizeof (double) << std::endl;
         //localMat.resize(nRowLocal*nColLocal);
         //localMat = (double *) malloc(nRowLocal * nColLocal * sizeof(double));
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&localMat), sizeof(double) * (nRowLocal * nColLocal)) );
+#else
         localMat = new double[nRowLocal * nColLocal];
+#endif
     }
 
     ~ ParMat(){
+#ifdef USE_CUBLAS
+        CUDA_CHECK(cudaFree(localMat));
+#else
         delete[] localMat;
-        //free(localMat);
+#endif
     }
 
     void generate() {
         //localMat.resize(nRowLocal, std::vector<double>(nColLocal, 0.0));
+#ifdef USE_CUBLAS
+        // Generate in host memory and then copy to device memory
+        // Alternative is to write a CUDA kernel to generate in GPU, which will be adopted if needed
+        double *localMat_h = new double[nRowLocal * nColLocal];
+    	for (int idxColLocal = 0; idxColLocal < nColLocal; ++idxColLocal) {
+    		for (int idxRowLocal = 0; idxRowLocal < nRowLocal; ++idxRowLocal) {
+                int idxRowGlobal = localRowStart + idxRowLocal;
+                int idxColGlobal = localColStart + idxColLocal;
+    			int idx = idxColLocal * nRowLocal + idxRowLocal;
+                localMat_h[idx] = (double)(idxRowGlobal * nColGlobal + idxColGlobal);
+            }
+        }
+        CUDA_CHECK(cudaMemcpy(localMat, localMat_h, sizeof(double) * (nRowLocal * nColLocal), cudaMemcpyHostToDevice));
+        delete[] localMat_h;
+#else
     	for (int idxColLocal = 0; idxColLocal < nColLocal; ++idxColLocal) {
     		for (int idxRowLocal = 0; idxRowLocal < nRowLocal; ++idxRowLocal) {
                 int idxRowGlobal = localRowStart + idxRowLocal;
@@ -123,6 +156,7 @@ public:
                 localMat[idx] = (double)(idxRowGlobal * nColGlobal + idxColGlobal);
             }
         }
+#endif
     }
 
     void printLocalMatrix() const {
@@ -143,8 +177,6 @@ public:
     char frontFace;
     int localRowStart;
     int localColStart;
-    //std::vector<std::vector<double>> localMat;
-    //std::vector<double> localMat;
     double *localMat;
 };
 
@@ -166,6 +198,11 @@ ParMat matmul(ParMat& A, ParMat& B){
     double* recvB = NULL;
     double* multC = NULL;
     int nColRecvA, nColRecvB;
+
+#ifdef USE_CUBLAS
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+#endif
 
     {
         int commSize = 0;
@@ -194,7 +231,11 @@ ParMat matmul(ParMat& A, ParMat& B){
         int* recvDispls = new int[commSize + 1];
         recvDispls[0] = 0;
         std::partial_sum(nValToRecv, nValToRecv + commSize, recvDispls+1);
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&recvA), sizeof(double) * (recvDispls[commSize]) ) );
+#else
         recvA = new double[recvDispls[commSize]];
+#endif
 
         MPI_Allgatherv(A.localMat, A.nRowLocal*A.nColLocal, MPI_DOUBLE, recvA, nValToRecv, recvDispls, MPI_DOUBLE, grid.fibWorld);
 
@@ -236,7 +277,12 @@ ParMat matmul(ParMat& A, ParMat& B){
         int* recvDispls = new int[commSize + 1];
         recvDispls[0] = 0;
         std::partial_sum(nValToRecv, nValToRecv + commSize, recvDispls + 1);
-        recvB = new double[recvDispls[commSize]]; // Allocate for received B matrix
+
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&recvB), sizeof(double) * (recvDispls[commSize]) ) );
+#else
+        recvB = new double[recvDispls[commSize]];
+#endif
        
         // Perform the Allgatherv operation to collect B matrix columns
         MPI_Allgatherv(B.localMat, B.nRowLocal * B.nColLocal, MPI_DOUBLE, recvB, nValToRecv, recvDispls, MPI_DOUBLE, grid.colWorld);
@@ -255,7 +301,11 @@ ParMat matmul(ParMat& A, ParMat& B){
 
     //std::cout << myrank << ": " << nColRecvA << " - " << B.nRowLocal << std::endl;
 
-    multC = new double[A.nRowLocal * nColRecvB];
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&multC), sizeof(double) * (A.nRowLocal * nColRecvB) ) );
+#else
+        multC = new double[A.nRowLocal * nColRecvB];
+#endif
 
     int cblas_m = A.nRowLocal;
     int cblas_k = nColRecvA;
@@ -273,16 +323,6 @@ ParMat matmul(ParMat& A, ParMat& B){
 	double tMemMove = 0;
 	double tDgemm = 0;
 	t0 = MPI_Wtime();
-	double *d_A, *d_B, *d_C;
-    cudaError_t err;
-	CUDA_CHECK(cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k));
-	CUDA_CHECK(cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n));
-	CUDA_CHECK(cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n));
-	CUDA_CHECK(cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice));
-	CUDA_CHECK(cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice));
-	CUDA_CHECK(cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n));
-	cublasHandle_t handle;
-	cublasCreate(&handle);
 	cublasOperation_t transA = CUBLAS_OP_N;
 	cublasOperation_t transB = CUBLAS_OP_N;
 	t1 = MPI_Wtime();
@@ -291,17 +331,12 @@ ParMat matmul(ParMat& A, ParMat& B){
 
 	t0 = MPI_Wtime();
     cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
-                &cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
-                &cblas_beta, d_C, cblas_ldc);
+                &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
+                &cblas_beta, cblas_c, cblas_ldc);
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
 	t0 = MPI_Wtime();
-	CUDA_CHECK(cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost));
-	cublasDestroy(handle);
-	cudaFree(d_A);
-	cudaFree(d_B);
-	cudaFree(d_C);
 	t1 = MPI_Wtime();
 	tMemMove += (t1-t0);
 
@@ -347,7 +382,7 @@ ParMat matmul(ParMat& A, ParMat& B){
         t0 = MPI_Wtime();
 
         // Gather the number of columns from all processes in the column grid
-        MPI_Allgather(&nColToRecv, 1, MPI_INT, nColToSend, 1, MPI_INT, grid.rowWorld); // Update communicator
+        MPI_Allgather(&nColToRecv, 1, MPI_INT, nColToSend, 1, MPI_INT, grid.rowWorld); 
 
         // Calculate the number of values to scatter based on the number of rows in C
         int* nValToSend = new int[commSize];
@@ -374,10 +409,16 @@ ParMat matmul(ParMat& A, ParMat& B){
         delete[] sendDispls;
     }
     
-
+#ifdef USE_CUBLAS
+    CUDA_CHECK(cudaFree(recvA));
+    CUDA_CHECK(cudaFree(recvB));
+    CUDA_CHECK(cudaFree(multC));
+	cublasDestroy(handle);
+#else
     delete[] recvA;
     delete[] recvB;
     delete[] multC;
+#endif
 
     return C;
 }
@@ -403,16 +444,34 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
     double* recvB = NULL;
     double* multC = C.localMat;
 
+#ifdef USE_CUBLAS
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+#endif
+
     {
         t0 = MPI_Wtime();
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&recvB), sizeof(double) * (B.nRowLocal * B.nColGlobal) ) );
+        curandGenerator_t gen = NULL;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        const unsigned long long offset = 0ULL;
+        const unsigned long long seed = 1234ULL;
 
+        CURAND_CHECK(curandCreateGenerator(&gen, rng));
+        CURAND_CHECK(curandSetGeneratorOffset(gen, offset));
+        CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
+        CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
+        CURAND_CHECK(curandGenerateUniformDouble(gen, recvB, B.nRowGlobal * B.nColGlobal ));
+#else
         recvB = new double[B.nRowGlobal * B.nColGlobal]; // Allocate for received B matrix
         Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
 
         for (size_t i = 0; i < B.nRowGlobal * B.nColGlobal; ++i) {
             recvB[i] = prng.nextDouble();
         }
-
+#endif
         t1 = MPI_Wtime();
 
         if(myrank == 0){
@@ -436,16 +495,6 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
 	double tMemMove = 0;
 	double tDgemm = 0;
 	t0 = MPI_Wtime();
-	double *d_A, *d_B, *d_C;
-    cudaError_t err;
-	CUDA_CHECK(cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k));
-	CUDA_CHECK(cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n));
-	CUDA_CHECK(cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n));
-	CUDA_CHECK(cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice));
-	CUDA_CHECK(cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice));
-	CUDA_CHECK(cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n));
-	cublasHandle_t handle;
-	cublasCreate(&handle);
 	cublasOperation_t transA = CUBLAS_OP_N;
 	cublasOperation_t transB = CUBLAS_OP_N;
 	t1 = MPI_Wtime();
@@ -454,17 +503,12 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
 
 	t0 = MPI_Wtime();
     cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
-                &cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
-                &cblas_beta, d_C, cblas_ldc);
+                &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
+                &cblas_beta, cblas_c, cblas_ldc);
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
 	t0 = MPI_Wtime();
-	CUDA_CHECK(cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost));
-	cublasDestroy(handle);
-	cudaFree(d_A);
-	cudaFree(d_B);
-	cudaFree(d_C);
 	t1 = MPI_Wtime();
 	tMemMove += (t1-t0);
 
@@ -499,7 +543,12 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
     }
 #endif
 
+#ifdef USE_CUBLAS
+    CUDA_CHECK(cudaFree(recvB));
+	cublasDestroy(handle);
+#else
     delete[] recvB;
+#endif
 
     return C;
 }
@@ -526,15 +575,34 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
     double* multC = C.localMat;
     int nColRecvB;
 
+#ifdef USE_CUBLAS
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+#endif
+
     {
         t0 = MPI_Wtime();
+#ifdef USE_CUBLAS
+        curandGenerator_t gen = NULL;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        const unsigned long long offset = 0ULL;
+        //const unsigned long long seed = 1234ULL;
+        const unsigned long long seed = static_cast<unsigned long long>(myrank);
 
-        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        CURAND_CHECK(curandCreateGenerator(&gen, rng));
+        CURAND_CHECK(curandSetGeneratorOffset(gen, offset));
+        CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
+        CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
+        CURAND_CHECK(curandGenerateUniformDouble(gen, B.localMat, (B.nRowLocal * B.nColLocal)));
+#else
+        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        Xoroshiro128Plus prng(myrank, myrank); // Defined in prng.cpp
 
         for (size_t i = 0; i < B.nRowLocal * B.nColLocal; ++i) {
             B.localMat[i] = prng.nextDouble();
         }
-
+#endif
         t1 = MPI_Wtime();
 
         if(myrank == 0){
@@ -567,7 +635,11 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
         int* recvDispls = new int[commSize + 1];
         recvDispls[0] = 0;
         std::partial_sum(nValToRecv, nValToRecv + commSize, recvDispls + 1);
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&recvB), sizeof(double) * (recvDispls[commSize]) ) );
+#else
         recvB = new double[recvDispls[commSize]]; // Allocate for received B matrix
+#endif
 
         // Perform the Allgatherv operation to collect B matrix columns
         MPI_Allgatherv(B.localMat, B.nRowLocal * B.nColLocal, MPI_DOUBLE, recvB, nValToRecv, recvDispls, MPI_DOUBLE, grid.colWorld);
@@ -583,7 +655,6 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
             printf("Time to gather B: %lf sec\n", t1-t0);
         }
     }
-
 
     auto cblas_m = A.nRowLocal;
     auto cblas_k = A.nColLocal;
@@ -601,35 +672,19 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
 	double tMemMove = 0;
 	double tDgemm = 0;
 	t0 = MPI_Wtime();
-	double *d_A, *d_B, *d_C;
-    cudaError_t err;
-	CUDA_CHECK(cudaMalloc(&d_A, sizeof(double) * cblas_lda * cblas_k));
-	CUDA_CHECK(cudaMalloc(&d_B, sizeof(double) * cblas_ldb * cblas_n));
-	CUDA_CHECK(cudaMalloc(&d_C, sizeof(double) * cblas_ldc * cblas_n));
-	CUDA_CHECK(cudaMemcpy(d_A, cblas_a, sizeof(double) * cblas_lda * cblas_k, cudaMemcpyHostToDevice));
-	CUDA_CHECK(cudaMemcpy(d_B, cblas_b, sizeof(double) * cblas_ldb * cblas_n, cudaMemcpyHostToDevice));
-	CUDA_CHECK(cudaMemset(d_C, 0, sizeof(double) * cblas_ldc * cblas_n));
-	cublasHandle_t handle;
-	cublasCreate(&handle);
 	cublasOperation_t transA = CUBLAS_OP_N;
 	cublasOperation_t transB = CUBLAS_OP_N;
 	t1 = MPI_Wtime();
 	tMemMove += (t1-t0);
 	
-
 	t0 = MPI_Wtime();
     cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
-                &cblas_alpha, d_A, cblas_lda, d_B, cblas_ldb,
-                &cblas_beta, d_C, cblas_ldc);
+                &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
+                &cblas_beta, cblas_c, cblas_ldc);
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
 	t0 = MPI_Wtime();
-	CUDA_CHECK(cudaMemcpy(cblas_c, d_C, sizeof(double) * cblas_ldc * cblas_n, cudaMemcpyDeviceToHost));
-	cublasDestroy(handle);
-	cudaFree(d_A);
-	cudaFree(d_B);
-	cudaFree(d_C);
 	t1 = MPI_Wtime();
 	tMemMove += (t1-t0);
 
@@ -638,7 +693,6 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
 		printf("Time for local multiply: %lf sec\n", tDgemm);
 	}
 #else
-                                     
     t0 = MPI_Wtime();
 
     cblas_dgemm(
@@ -664,7 +718,12 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
     }
 #endif
 
+#ifdef USE_CUBLAS
+    CUDA_CHECK(cudaFree(recvB));
+	cublasDestroy(handle);
+#else
     delete[] recvB;
+#endif
 
     return C;
 }
