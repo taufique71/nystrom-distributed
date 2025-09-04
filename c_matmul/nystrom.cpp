@@ -8,6 +8,14 @@
 #include "matrix.h"
 #include "nystrom.h"
 
+/*
+alg:
+	- nystrom_1d_noredist_1d
+	- nystrom_1d_redist_1d
+	- nystrom_2d_noredist_1d_redundant
+	- nystrom_2d_noredist_1d_comm
+	- nystrom_2d_noredist_1d_precise
+*/
 int main(int argc, char* argv[]) {
     // Initialize MPI
     MPI_Init(&argc, &argv);
@@ -107,6 +115,11 @@ int main(int argc, char* argv[]) {
         ParMat Y(n, r, grid2, 'B');
         ParMat Z(r, r, grid2, 'C');
         nystrom_1d_redist_1d(A, r, Y, Z);
+    }
+    else if (alg == "nystrom-2d-noredist-1d-redundant") {
+        ParMat Y(n, r, grid2, 'B');
+        ParMat Z(r, r, grid2, 'C');
+        //nystrom_1d_redist_1d(A, r, Y, Z);
     }
 
     // Finalize MPI

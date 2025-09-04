@@ -27,7 +27,7 @@ if [ "$SYSTEM" == "perlmutter-cpu" ]; then
 
 	CORE_PER_NODE=128 # 2 CPUs. 64 cores per CPU. Never change. Specific to the system
 	PER_NODE_MEMORY=512 # Never change. Specific to the system
-	PROC_PER_NODE=4 # 2 sockets for 2 CPUs. 4 NUMA domains per socket.
+	PROC_PER_NODE=8 # 2 sockets for 2 CPUs. 4 NUMA domains per socket.
 elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
 	# https://docs.nersc.gov/systems/perlmutter/architecture/#gpu-nodes
 
