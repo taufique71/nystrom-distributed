@@ -117,7 +117,7 @@ class ParMat:
         A = np.arange(elements)
         A = A.reshape(self.nRowGlobal, rank)
         A = A @ A.T
-        self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+        # self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
         for idxRowLocal in range(0, self.nRowLocal):
             for idxColLocal in range(0, self.nColLocal):
                 idxRowGlobal = self.localRowStart + idxRowLocal
@@ -129,8 +129,8 @@ class ParMat:
     def gen_A_2d1d(self, p2, p3, nRowLocal, nColLocal, dtype=np.float64):
         self.localMat = np.ones( (nRowLocal, nColLocal), dtype=dtype, order='F')
 
-    def generate_rand(self,seed, dtype=np.float64, generator="xoroshiro"):
-        self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
+    def generate_rand(self,seed, generator="xoroshiro"):
+        # self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
         prng = None
         if generator == 'xoroshiro':
             prng = Generator(Xoroshiro128(seed, plusplus=False))
