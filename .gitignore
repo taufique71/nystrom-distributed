@@ -4,3 +4,4 @@ build_gpu/
 __pycache__/
 blah.txt
 slurm.*
+logs/
