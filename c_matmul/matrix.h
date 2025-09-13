@@ -7,6 +7,7 @@
 #include <cassert>
 #include <numeric>
 #include <omp.h>
+#include <cmath>
 
 #ifdef USE_CUBLAS
 	#include <cublas_v2.h>
@@ -123,6 +124,74 @@ public:
 #endif
     }
 
+
+    ParMat(int m, int n, ProcGrid& grid, char frontFace, std::vector<int>& rowDistrib, std::vector<int>& colDistrib)
+        : nRowGlobal(m), nColGlobal(n), grid(grid), frontFace(frontFace), rowDistrib(rowDistrib), colDistrib(colDistrib) {
+        this->rowDispls.resize(this->rowDistrib.size()+1, 0);
+        std::partial_sum(this->rowDistrib.begin(), this->rowDistrib.end(), this->rowDispls.begin()+1); 
+        this->colDispls.resize(this->colDistrib.size()+1, 0);
+        std::partial_sum(this->colDistrib.begin(), this->colDistrib.end(), this->colDispls.begin()+1); 
+
+        // Sanity check and re-define the process dimensions and relevant variables locally
+        // from the perspective of looking at the grid from frontFace
+        int mExpected = std::accumulate(this->rowDistrib.begin(), this->rowDistrib.end(), 0);
+        int nExpected = std::accumulate(this->colDistrib.begin(), this->colDistrib.end(), 0);
+        assert(m == mExpected);
+        assert(n == nExpected);
+
+        if(frontFace == 'A'){
+            assert(this->rowDistrib.size() == grid.nProcRow);
+            assert(this->colDistrib.size() == grid.nProcCol);
+            this->nProcRow = grid.nProcRow; this->nProcCol = grid.nProcCol; this->nProcFib = grid.nProcFib;
+            this->rowRank = grid.rowRank; this->colRank = grid.colRank; this->fibRank = grid.fibRank;
+            this->rowWorld = grid.rowWorld; this->rankInRowWorld = grid.rankInRowWorld;
+            this->colWorld = grid.colWorld; this->rankInColWorld = grid.rankInColWorld;
+            this->fibWorld = grid.fibWorld; this->rankInFibWorld = grid.rankInFibWorld;
+        }
+        else if(frontFace == 'B'){
+            assert(this->rowDistrib.size() == grid.nProcCol);
+            assert(this->colDistrib.size() == grid.nProcFib);
+            this->nProcRow = grid.nProcCol; this->nProcCol = grid.nProcFib; this->nProcFib = grid.nProcRow;
+            this->rowRank = grid.colRank; this->colRank = grid.fibRank; this->fibRank = grid.rowRank;
+            this->rowWorld = grid.fibWorld; this->rankInRowWorld = grid.rankInFibWorld;
+            this->colWorld = grid.rowWorld; this->rankInColWorld = grid.rankInRowWorld;
+            this->fibWorld = grid.colWorld; this->rankInFibWorld = grid.rankInColWorld;
+        }
+        else if(frontFace == 'C'){
+            assert(this->rowDistrib.size() == grid.nProcRow);
+            assert(this->colDistrib.size() == grid.nProcFib);
+            this->nProcRow = grid.nProcRow; this->nProcCol = grid.nProcFib; this->nProcFib = grid.nProcCol;
+            this->rowRank = grid.rowRank; this->colRank = grid.fibRank; this->fibRank = grid.colRank;
+            this->rowWorld = grid.fibWorld; this->rankInRowWorld = grid.rankInFibWorld;
+            this->colWorld = grid.colWorld; this->rankInColWorld = grid.rankInColWorld;
+            this->fibWorld = grid.rowWorld; this->rankInFibWorld = grid.rankInRowWorld;
+        }
+
+        // For rest of the function, these values would be used 
+        this->localRowStart = this->rowDispls[this->rowRank];
+        this->localColStart = this->colDispls[this->colRank];
+        this->nRowLocal = this->rowDistrib[this->rowRank];
+        this->nColLocal = this->colDistrib[this->colRank];
+
+        if (this->nProcFib > 1){
+            if(this->fibRank < this->nProcFib-1){
+                this->localColStart = this->fibRank * ceil(this->nColLocal/this->nProcFib);
+                this->nColLocal = ceil(this->nColLocal / this->nProcFib);
+            }
+            else{
+                this->localColStart = this->fibRank * ceil(this->nColLocal/this->nProcFib);
+                this->nColLocal = n - this->localColStart;
+            }
+        }
+        
+
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&localMat), sizeof(double) * (this->nRowLocal * this->nColLocal)) );
+#else
+        localMat = new double[this->nRowLocal * this->nColLocal];
+#endif
+    }
+
     ~ ParMat(){
 #ifdef USE_CUBLAS
         CUDA_CHECK(cudaFree(localMat));
@@ -132,7 +201,6 @@ public:
     }
 
     void generate() {
-        //localMat.resize(nRowLocal, std::vector<double>(nColLocal, 0.0));
 #ifdef USE_CUBLAS
         // Generate in host memory and then copy to device memory
         // Alternative is to write a CUDA kernel to generate in GPU, which will be adopted if needed
@@ -160,7 +228,8 @@ public:
     }
 
     void printLocalMatrix() const {
-    	std::cout << "Local Matrix (Process " << grid.myrank << " [" << nRowLocal << "x" << nColLocal << "]" <<  "):\n";
+        printf("Local Matrix (myrank %d, rowRank %d, colRank %d, fibRank %d): [ %d x %d ]\n", 
+                grid.myrank, grid.rowRank, grid.colRank, grid.fibRank, nRowLocal, nColLocal);
     	//for (const auto& row : localMat) {
     		//for (const auto& val : row) {
     			//std::cout << val << " ";
@@ -169,19 +238,37 @@ public:
     	//}
     }
 
+    ProcGrid& grid;
+    int nProcRow;
+    int nProcCol;
+    int nProcFib;
+    MPI_Comm rowWorld;
+    MPI_Comm colWorld;
+    MPI_Comm fibWorld;
+    int rankInRowWorld;
+    int rankInColWorld;
+    int rankInFibWorld;
+    int rowRank;
+    int colRank;
+    int fibRank;
+
     int nRowGlobal;
     int nColGlobal;
     int nRowLocal;
     int nColLocal;
-    ProcGrid& grid;
     char frontFace;
+    char distOrRedundant;
     int localRowStart;
     int localColStart;
     double *localMat;
+
+    std::vector<int> rowDistrib;
+    std::vector<int> colDistrib;
+    std::vector<int> rowDispls;
+    std::vector<int> colDispls;
 };
 
 /*
- * Written by: Taufique Hussain (hussaint@wfu.edu)
  * General matrix matrix multiplication
  * */
 ParMat matmul(ParMat& A, ParMat& B){
