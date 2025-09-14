@@ -4,7 +4,7 @@
 #SBATCH --account=ballardGrp               
 #SBATCH --tasks-per-node=44
 #SBATCH --nodes=1                  
-#SBATCH --time=0-00:01:00          
+#SBATCH --time=0-01:01:00          
 #SBATCH --mem=128GB                   
 #SBATCH --mail-user=rahmm224@wfu.edu  
 #SBATCH --mail-type=FAIL,END  
@@ -14,8 +14,8 @@
 
 module load mpi/intel/2021.10.0
 conda activate /home/rahmm224/Summer2025Env
-PY="/deac/csc/ballardGrp/rahmm224/nystrom/nystrom-distributed/CIFAR10bianry.py"
-
-python $PY -n 100
+PY="/deac/csc/ballardGrp/rahmm224/new_nystrom/nystrom-distributed/CIFAR10bianry.py"
+path="./data"
+python $PY -path $path
 
 conda deactivate
