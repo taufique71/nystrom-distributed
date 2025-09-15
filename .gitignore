@@ -6,3 +6,4 @@ blah.txt
 slurm.*
 logs/
 data/
+experiments/
