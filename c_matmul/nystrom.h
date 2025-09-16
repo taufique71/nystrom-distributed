@@ -42,170 +42,228 @@
 #include "prng.h"
 #include "utils.h"
 
-//void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
-    //double t0, t1, t2, t3;
-    //int nproc, myrank;
-    //MPI_Comm_size(MPI_COMM_WORLD, &nproc);
-    //MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
+	double t0, t1, t2, t3;
+    double tGenOmega1=0.0, tDataMove1=0.0, tDgemm1=0.0;
+    double tGenOmega2=0.0, tDataMove2=0.0, tDgemm2=0.0, tReduceScatter = 0.0;
 
-    //ProcGrid grid1 = A.grid;
-    //ProcGrid grid2 = Y.grid;
+	int nproc, myrank;
+	MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+	MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+	
+	int n = A.nRowGlobal;
+	ProcGrid grid1 = A.grid;
+	ProcGrid grid2 = Y.grid;
 
-//#ifdef USE_CUBLAS
-	//cublasHandle_t handle;
-	//cublasCreate(&handle);
-//#endif
+#ifdef USE_CUBLAS
+	cublasHandle_t handle;
+	cublasCreate(&handle);
+#endif
 
-    ////ParMat Y(A.nRowGlobal, r, grid, 'C');
-    //if(myrank == 0) printf("matmul1 in %dx%dx%d grid\n", A.grid.nProcRow, A.grid.nProcCol, A.grid.nProcFib);
-    
-    //double* Omega = NULL;
-    //{
-        //t0 = MPI_Wtime();
+	//ParMat Y(A.nRowGlobal, r, grid, 'C');
+	//if(myrank == 0) printf("matmul1 in %dx%dx%d grid\n", A.grid.nProcRow, A.grid.nProcCol, A.grid.nProcFib);
+	
+    double* Omega = NULL;
+    {
+        t0 = MPI_Wtime();
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&Omega), sizeof(double) * (n * r) ) );
+        curandGenerator_t gen = NULL;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        const unsigned long long offset = 0ULL;
+        const unsigned long long seed = 1234ULL;
 
-        //Omega = new double[A.nColGlobal * r]; // Allocate for received B matrix
-        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        CURAND_CHECK(curandCreateGenerator(&gen, rng));
+        CURAND_CHECK(curandSetGeneratorOffset(gen, offset));
+        CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
+        CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
+        CURAND_CHECK(curandGenerateUniformDouble(gen, Omega, n * r ));
+#else
+        Omega = new double[n * r]; // Allocate for received B matrix
+        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
 
-        //for (size_t i = 0; i < A.nColGlobal * r; ++i) {
-            //Omega[i] = prng.nextDouble();
-        //}
+        for (size_t i = 0; i < n * r; ++i) {
+            Omega[i] = prng.nextDouble();
+        }
+#endif
+        t1 = MPI_Wtime();
+        tGenOmega1 = t1-t0;
+    }
 
-        //t1 = MPI_Wtime();
+	{
+		auto cblas_m = A.nRowLocal;
+		auto cblas_k = A.nColGlobal;
+		auto cblas_n = r;
+		auto cblas_alpha = 1.0;
+		auto cblas_beta = 0.0;
+		auto cblas_a = A.localMat;
+		auto cblas_lda = A.nRowLocal;
+		auto cblas_b = Omega;
+		auto cblas_ldb = A.nColGlobal;
+		auto cblas_c = Y.localMat; 
+		auto cblas_ldc = A.nRowLocal; 
+										 
+        t0 = MPI_Wtime();
+#ifdef USE_CUBLAS
+        cublasOperation_t transA = CUBLAS_OP_N;
+        cublasOperation_t transB = CUBLAS_OP_N;
 
-        //if(myrank == 0){
-            //printf("Time to generate Omega: %lf sec\n", t1-t0);
-        //}
-    //}
+        cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+                    &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
+                    &cblas_beta, cblas_c, cblas_ldc);
+#else
 
-    //{
-        //auto cblas_m = A.nRowLocal;
-        //auto cblas_k = A.nColGlobal;
-        //auto cblas_n = r;
-        //auto cblas_alpha = 1.0;
-        //auto cblas_beta = 0.0;
-        //auto cblas_a = A.localMat;
-        //auto cblas_lda = A.nRowLocal;
-        //auto cblas_b = Omega;
-        //auto cblas_ldb = A.nColGlobal;
-        //auto cblas_c = Y.localMat; 
-        //auto cblas_ldc = A.nRowLocal; 
-                                         
-        //t0 = MPI_Wtime();
+        cblas_dgemm(
+            CblasColMajor, // Column major order. `Layout` parameter of MKL cblas call.
+            CblasNoTrans, // A matrix is not transpose. `transa` param of MKL cblas call.
+            CblasNoTrans, // B matrix is not transpose. `transb` param of MKL cblas call.
+            cblas_m, // Number of rows of A or C. `m` param of MKL cblas call.
+            cblas_n, // Number of cols of B or C. `n` param of MKL cblas call.
+            cblas_k, // Inner dimension - number of columns of A or number of rows of B. `k` param of MKL cblas call.
+            cblas_alpha, // Scalar `alpha` param of MKL cblas call.
+            cblas_a, // Data buffer of A. `a` param of MKL cblas call.
+            cblas_lda, // Leading dimension of A. `lda` param of MKL cblas call.
+            cblas_b, // Data buffer of B. `b` param of MKL cblas call.
+            cblas_ldb, // Leading dimension of B. `ldb` param of MKL cblas call.
+            cblas_beta, // Scalar `beta` param of MKL cblas call.
+            cblas_c, // Data buffer of C. `c` param of MKL cblas call.
+            cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
+        );
 
-        //cblas_dgemm(
-            //CblasColMajor, // Column major order. `Layout` parameter of MKL cblas call.
-            //CblasNoTrans, // A matrix is not transpose. `transa` param of MKL cblas call.
-            //CblasNoTrans, // B matrix is not transpose. `transb` param of MKL cblas call.
-            //cblas_m, // Number of rows of A or C. `m` param of MKL cblas call.
-            //cblas_n, // Number of cols of B or C. `n` param of MKL cblas call.
-            //cblas_k, // Inner dimension - number of columns of A or number of rows of B. `k` param of MKL cblas call.
-            //cblas_alpha, // Scalar `alpha` param of MKL cblas call.
-            //cblas_a, // Data buffer of A. `a` param of MKL cblas call.
-            //cblas_lda, // Leading dimension of A. `lda` param of MKL cblas call.
-            //cblas_b, // Data buffer of B. `b` param of MKL cblas call.
-            //cblas_ldb, // Leading dimension of B. `ldb` param of MKL cblas call.
-            //cblas_beta, // Scalar `beta` param of MKL cblas call.
-            //cblas_c, // Data buffer of C. `c` param of MKL cblas call.
-            //cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
-        //);
+#endif
+        t1 = MPI_Wtime();
+        tDgemm1 = (t1-t0);
+	}
 
-        //t1 = MPI_Wtime();
-        //if(myrank == 0){
-            //printf("Time for first dgemm: %lf sec\n", t1-t0);
-        //}
-    //}
+	//if(myrank == 0) printf("matmul2 in %dx%dx%d grid\n", Y.grid.nProcRow, Y.grid.nProcCol, Y.grid.nProcFib);
 
-    //if(myrank == 0) printf("matmul2 in %dx%dx%d grid\n", Y.grid.nProcRow, Y.grid.nProcCol, Y.grid.nProcFib);
+	// grid1 and grid2 is same, so does not matter if grid1 and grid2 is used. Using grid2 because the name is relevant for matmul2
+	double* contribZ = NULL;
+#ifdef USE_CUBLAS
+    CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&contribZ), sizeof(double) * (r * r) ) );
+#else
+	contribZ = new double[r*r];
+#endif
+	int OmegaTColOffset = grid2.rowRank * (A.nColGlobal / grid2.nProcRow); // How many columns of BT needs to be moved forward
+	int OmegaTColCount = (grid2.rankInColWorld < grid2.nProcRow-1) ? (A.nColGlobal / grid2.nProcRow) : (A.nColGlobal - OmegaTColOffset) ;
 
-    //// grid1 and grid2 is same, so does not matter if grid1 and grid2 is used. Using grid2 because the name is relevant for matmul2
-    //double* contribZ = new double[r*r];
-    //int OmegaTColOffset = grid2.rowRank * (A.nColGlobal / grid2.nProcRow); // How many columns of BT needs to be moved forward
-    //int OmegaTColCount = (grid2.rankInColWorld < grid2.nProcRow-1) ? (A.nColGlobal / grid2.nProcRow) : (A.nColGlobal - OmegaTColOffset) ;
+	{
+		auto cblas_m = r;
+		auto cblas_k = OmegaTColCount; // Number of columns of Omega-transpose to be used
+		auto cblas_n = Y.nColLocal;
+		auto cblas_alpha = 1.0;
+		auto cblas_beta = 0.0;
+		auto cblas_a = Omega + (A.nRowGlobal / grid2.nProcRow) * grid2.rowRank; // Move forward these many entries of Omega
+		auto cblas_lda = A.nColGlobal;
+		auto cblas_b = Y.localMat;
+		auto cblas_ldb = Y.nRowLocal;
+		auto cblas_c = contribZ; 
+		auto cblas_ldc = r; 
+										 
+		t0 = MPI_Wtime();
+#ifdef USE_CUBLAS
+        cublasOperation_t transA = CUBLAS_OP_T;
+        cublasOperation_t transB = CUBLAS_OP_N;
 
-    //{
-        //auto cblas_m = r;
-        //auto cblas_k = OmegaTColCount; // Number of columns of Omega-transpose to be used
-        //auto cblas_n = Y.nColLocal;
-        //auto cblas_alpha = 1.0;
-        //auto cblas_beta = 0.0;
-        //auto cblas_a = Omega + (A.nRowGlobal / grid2.nProcRow) * grid2.rowRank; // Move forward these many entries of Omega
-        //auto cblas_lda = A.nColGlobal;
-        //auto cblas_b = Y.localMat;
-        //auto cblas_ldb = Y.nRowLocal;
-        //auto cblas_c = contribZ; 
-        //auto cblas_ldc = r; 
-                                         
-        //t0 = MPI_Wtime();
+        cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
+                    &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
+                    &cblas_beta, cblas_c, cblas_ldc);
+#else
+		cblas_dgemm(
+			CblasColMajor, // Column major order. `Layout` parameter of MKL cblas call.
+			CblasTrans, // A matrix is transpose. `transa` param of MKL cblas call.
+			CblasNoTrans, // B matrix is not transpose. `transb` param of MKL cblas call.
+			cblas_m, // Number of rows of A or C. `m` param of MKL cblas call.
+			cblas_n, // Number of cols of B or C. `n` param of MKL cblas call.
+			cblas_k, // Inner dimension - number of columns of A or number of rows of B. `k` param of MKL cblas call.
+			cblas_alpha, // Scalar `alpha` param of MKL cblas call.
+			cblas_a, // Data buffer of A. `a` param of MKL cblas call.
+			cblas_lda, // Leading dimension of A. `lda` param of MKL cblas call.
+			cblas_b, // Data buffer of B. `b` param of MKL cblas call.
+			cblas_ldb, // Leading dimension of B. `ldb` param of MKL cblas call.
+			cblas_beta, // Scalar `beta` param of MKL cblas call.
+			cblas_c, // Data buffer of C. `c` param of MKL cblas call.
+			cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
+		);
+#endif
+		t1 = MPI_Wtime();
+        tDgemm2 = t1-t0;
+	}
 
-        //cblas_dgemm(
-            //CblasColMajor, // Column major order. `Layout` parameter of MKL cblas call.
-            //CblasTrans, // A matrix is transpose. `transa` param of MKL cblas call.
-            //CblasNoTrans, // B matrix is not transpose. `transb` param of MKL cblas call.
-            //cblas_m, // Number of rows of A or C. `m` param of MKL cblas call.
-            //cblas_n, // Number of cols of B or C. `n` param of MKL cblas call.
-            //cblas_k, // Inner dimension - number of columns of A or number of rows of B. `k` param of MKL cblas call.
-            //cblas_alpha, // Scalar `alpha` param of MKL cblas call.
-            //cblas_a, // Data buffer of A. `a` param of MKL cblas call.
-            //cblas_lda, // Leading dimension of A. `lda` param of MKL cblas call.
-            //cblas_b, // Data buffer of B. `b` param of MKL cblas call.
-            //cblas_ldb, // Leading dimension of B. `ldb` param of MKL cblas call.
-            //cblas_beta, // Scalar `beta` param of MKL cblas call.
-            //cblas_c, // Data buffer of C. `c` param of MKL cblas call.
-            //cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
-        //);
+	//ParMat Z(r, r, grid, 'B'); // B face for column split distrib of Z
+	{
+		int commSize = 0;
+		MPI_Comm_size(grid2.colWorld, &commSize); // colWorld - because we chose B face for distribution of Z
 
-        //t1 = MPI_Wtime();
-        //if(myrank == 0){
-            //printf("Time for second dgemm: %lf sec\n", t1-t0);
-        //}
-    //}
+		// Reduce scatter of Z along process grid column
+		int nColToRecv = Z.nColLocal; // Data structure is already prepared, just collect necessary information
+		int* nColToSend = new int[commSize]; // Change to commSize for column-wise collection
+		
+		t0 = MPI_Wtime();
 
-    ////ParMat Z(r, r, grid, 'B'); // B face for column split distrib of Z
-    //{
-        //int commSize = 0;
-        //MPI_Comm_size(grid2.colWorld, &commSize); // colWorld - because we chose B face for distribution of Z
+		// Gather the number of columns from all processes in the column grid
+		MPI_Allgather(&nColToRecv, 1, MPI_INT, nColToSend, 1, MPI_INT, grid2.colWorld); // Update communicator
 
-        //// Reduce scatter of Z along process grid column
-        //int nColToRecv = Z.nColLocal; // Data structure is already prepared, just collect necessary information
-        //int* nColToSend = new int[commSize]; // Change to commSize for column-wise collection
-        
-        //t0 = MPI_Wtime();
+		// Calculate the number of values to scatter based on the number of rows in Z
+		int* nValToSend = new int[commSize];
+		for (int i = 0; i < commSize; i++) {
+			nValToSend[i] = nColToSend[i] * Z.nRowLocal; // Update to use Z matrix
+		}
 
-        //// Gather the number of columns from all processes in the column grid
-        //MPI_Allgather(&nColToRecv, 1, MPI_INT, nColToSend, 1, MPI_INT, grid2.colWorld); // Update communicator
+		// Prepare displacements for the data to be scattered
+		int* sendDispls = new int[commSize + 1];
+		sendDispls[0] = 0;
+		std::partial_sum(nValToSend, nValToSend + commSize, sendDispls + 1);
 
-        //// Calculate the number of values to scatter based on the number of rows in Z
-        //int* nValToSend = new int[commSize];
-        //for (int i = 0; i < commSize; i++) {
-            //nValToSend[i] = nColToSend[i] * Z.nRowLocal; // Update to use Z matrix
-        //}
+		// Scatter and reduce the relevant pieces of C
+		MPI_Reduce_scatter(contribZ, Z.localMat, nValToSend, MPI_DOUBLE, MPI_SUM, grid2.colWorld);
 
-        //// Prepare displacements for the data to be scattered
-        //int* sendDispls = new int[commSize + 1];
-        //sendDispls[0] = 0;
-        //std::partial_sum(nValToSend, nValToSend + commSize, sendDispls + 1);
+		t1 = MPI_Wtime();
+        tReduceScatter = t1-t0;
 
-        //// Scatter and reduce the relevant pieces of C
-        //MPI_Reduce_scatter(contribZ, Z.localMat, nValToSend, MPI_DOUBLE, MPI_SUM, grid2.colWorld);
+		// Clean up allocated memory
+		delete[] nColToSend;
+		delete[] nValToSend;
+		delete[] sendDispls;
+	}
 
-        //t1 = MPI_Wtime();
-        //if(myrank == 0){
-            //printf("Time to scatter and reduce Z: %lf sec\n", t1-t0);
-        //}
+#ifdef USE_CUBLAS
+    CUDA_CHECK(cudaFree(Omega));
+    CUDA_CHECK(cudaFree(contribZ));
+	cublasDestroy(handle);
+#else
+	delete[] Omega;
+	//delete[] multC;
+	delete[] contribZ;
+#endif
 
-        //// Clean up allocated memory
-        //delete[] nColToSend;
-        //delete[] nValToSend;
-        //delete[] sendDispls;
-    //}
+    double tGenOmega1_max=0.0, tDataMove1_max=0.0, tDgemm1_max=0.0;
+    double tGenOmega1_min=0.0, tDataMove1_min=0.0, tDgemm1_min=0.0;
+    double tGenOmega2_max=0.0, tDataMove2_max=0.0, tDgemm2_max=0.0, tReduceScatter_max=0.0;
+    double tGenOmega2_min=0.0, tDataMove2_min=0.0, tDgemm2_min=0.0, tReduceScatter_min=0.0;
+	
+	MPI_Allreduce(&tGenOmega1, &tGenOmega1_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	MPI_Allreduce(&tGenOmega1, &tGenOmega1_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+	MPI_Allreduce(&tDataMove1, &tDataMove1_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	MPI_Allreduce(&tDataMove1, &tDataMove1_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+	MPI_Allreduce(&tDgemm1, &tDgemm1_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	MPI_Allreduce(&tDgemm1, &tDgemm1_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+	MPI_Allreduce(&tDgemm2, &tDgemm2_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	MPI_Allreduce(&tDgemm2, &tDgemm2_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+	MPI_Allreduce(&tReduceScatter, &tReduceScatter_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	MPI_Allreduce(&tReduceScatter, &tReduceScatter_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
-    //delete[] Omega;
-    ////delete[] multC;
-    //delete[] contribZ;
+	if(myrank == 0){
+        printf("Time to generate Omega: %lf sec\n", tGenOmega1_max);
+        printf("Time for first dgemm: %lf sec\n", tDgemm1_max);
+        printf("Time for second dgemm: %lf sec\n", tDgemm2_max);
+        printf("Time for reduce-scatter: %lf sec\n", tReduceScatter_max);
+	}
 
-    //return;
+	return;
 
-//}
+}
 
 void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
     double t0, t1, t2, t3;

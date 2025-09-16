@@ -110,7 +110,7 @@ int main(int argc, char* argv[]) {
         
         ParMat Y(n, r, grid1, 'C');
         ParMat Z(r, r, grid1, 'B');
-        //nystrom_1d_noredist_1d(A, r, Y, Z);
+        nystrom_1d_noredist_1d(A, r, Y, Z);
     }
     else if (alg == "nystrom-1d-redist-1d") {
         // Create the process grid
