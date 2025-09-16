@@ -118,13 +118,15 @@ int main(int argc, char* argv[]) {
         ProcGrid grid2(matmul2p1, matmul2p2, matmul2p3);
         //grid.printInfo();
         
-        ParMat A(n, n, grid1, 'A');
-        A.generate();
-        //A.printLocalMatrix();
+        //std::vector<int> rowDistrib(grid1.nProcRow);
+        //std::vector<int> colDistrib(1, n);
+        //ParMat A(n, n, grid1, 'A', rowDistrib, colDistrib);
+		ParMat A(n, n, grid1, 'A');
+		A.generate();
         
         ParMat Y(n, r, grid2, 'B');
         ParMat Z(r, r, grid2, 'C');
-        //nystrom_1d_redist_1d(A, r, Y, Z);
+		nystrom_1d_redist_1d(A, r, Y, Z);
     }
     else if (alg == "nystrom-2d-redist-1d-redundant") {
         // Create the process grid
@@ -141,20 +143,8 @@ int main(int argc, char* argv[]) {
             findSplits( rowDistrib[i], colDistrib.size(), hieRowDistrib.data() + i * colDistrib.size() );
         }
 
-        //if(myrank == 0){
-            //printf("rowDistrib:");
-            //for(int i = 0; i < rowDistrib.size(); i++) printf("%d ", rowDistrib[i]);
-            //printf("\n");
-            //printf("colDistrib:");
-            //for(int i = 0; i < colDistrib.size(); i++) printf("%d ", colDistrib[i]);
-            //printf("\n");
-            //printf("hieRowDistrib:");
-            //for(int i = 0; i < hieRowDistrib.size(); i++) printf("%d ", hieRowDistrib[i]);
-            //printf("\n");
-        //}
-
         ParMat A(n, n, grid1, 'A', rowDistrib, colDistrib);
-        //A.generate();
+		A.generate();
         //A.printLocalMatrix();
 
         std::vector<int> rowDistribY(hieRowDistrib);
