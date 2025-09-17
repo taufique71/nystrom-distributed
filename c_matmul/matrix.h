@@ -226,6 +226,48 @@ public:
         }
 #endif
     }
+void parallelReadBinary(
+    std::string path,
+    MPI_Comm world)
+{
+    // Local sizes, global sizes, and starts
+    int lsizes[2]  = {nRowLocal, nColLocal};
+    int gsizes[2]  = {nRowGlobal, nColGlobal};
+    int starts[2]  = {localRowStart, localColStart};
+
+    MPI_File fh;
+    // Open file collectively
+    MPI_File_open(world, path.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fh);
+
+    MPI_Datatype view;
+    // Define subarray view (row-major)
+    MPI_Type_create_subarray(
+        2,            // dimensions
+        gsizes,       // global array shape
+        lsizes,       // local block shape
+        starts,       // starting indices
+        MPI_ORDER_C,  // row-major
+        MPI_DOUBLE,   // base type
+        &view
+    );
+    MPI_Type_commit(&view);
+
+    MPI_Offset disp = 0;  // offset in bytes
+    MPI_File_set_view(fh, disp, MPI_DOUBLE, view, "native", MPI_INFO_NULL);
+
+    // Allocate buffer for local block (contiguous)
+    // std::vector<double> buf(nRowLocal * nColLocal);
+
+    // Collective read: each process gets its block
+    MPI_File_read_all(fh, localMat, nRowLocal * nColLocal, MPI_DOUBLE, MPI_STATUS_IGNORE);
+
+    MPI_File_close(&fh);
+    MPI_Type_free(&view);
+
+    // return buf;  
+}
+
+
 
     void printLocalMatrix() const {
         printf("Local Matrix (myrank %d, rowRank %d, colRank %d, fibRank %d): [ %d x %d ]\n", 
