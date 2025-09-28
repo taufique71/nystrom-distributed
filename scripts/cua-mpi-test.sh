@@ -7,9 +7,9 @@
 
 #SBATCH -A m4293 # Sparsitute project (A Mathematical Institute for Sparse Computations in Science and Engineering)
 
-#SBATCH -t 0:10:00
+#SBATCH -t 0:02:00
 
-#SBATCH -N 1
+#SBATCH -N 4
 #SBATCH -J cua-mpi-test
 #SBATCH -o slurm.cua-mpi.o%j
 
@@ -17,7 +17,7 @@
 #SYSTEM=perlmutter-gpu
 SYSTEM=perlmutter-gpu-cpu
 #SYSTEM=perlmutter-cpu
-N_NODE=1
+N_NODE=${SLURM_NNODES}
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
 	# https://docs.nersc.gov/systems/perlmutter/architecture/#cpu-nodes
@@ -62,4 +62,6 @@ elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
 	BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/test-cua-mpi
 fi
 
-srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores $BIN
+STDOUT_FILE=$SCRATCH/nystrom/cua_mpi_test/"$SYSTEM"_"$N_NODE"_"$N_PROC"_5000
+
+srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores $BIN &> $STDOUT_FILE

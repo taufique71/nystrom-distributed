@@ -4,6 +4,7 @@
 #include <cassert>
 #include <numeric>
 #include <cstring>
+#include "utils.h"
 
 #ifdef USE_CUBLAS
 #include <cuda_runtime.h>
@@ -48,9 +49,9 @@ int main(int argc, char* argv[]) {
     int nprocs;
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
+	double t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12;
 #ifdef USE_CUBLAS
 	int deviceCount;
-	double t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12;
 	cudaDeviceProp prop;
     cudaGetDeviceCount(&deviceCount);
     if (deviceCount == 0) {
@@ -62,6 +63,59 @@ int main(int argc, char* argv[]) {
 
     MPI_Barrier(MPI_COMM_WORLD);
 
+    // Reduce-scatter test
+    
+    int m = 5000, n = 5000;
+    int * distrib = new int[nprocs];
+    findSplits(n, nprocs, distrib);
+	//printf("distrib myrank %d: ", myrank);
+	//for(int i=0; i < nprocs; i++) {
+		//if(i < nprocs-1) printf("%d ", distrib[i]);
+		//else printf("%d\n", distrib[i]);
+	//}
+
+    double * sendbuf_h = new double[m * n];
+    std::fill( sendbuf_h, sendbuf_h + (m * n), static_cast<double>(myrank+1) );
+	double * recvbuf = NULL;
+	double * sendbuf = NULL;
+	int* recvcnt = new int[nprocs];
+	for (int i = 0; i < nprocs; i++) recvcnt[i] = distrib[i] * m;
+#ifdef USE_CUBLAS
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&sendbuf), sizeof(double) * (m*n) ));
+    CUDA_CHECK(cudaMemcpy(sendbuf, sendbuf_h, sizeof(double) * (m*n), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&recvbuf), sizeof(double) * (m * distrib[myrank]) ));
+#else
+	sendbuf = new double[ m * n ];
+	memcpy(sendbuf, sendbuf_h, sizeof(double) * m * n);
+	recvbuf = new double[ m * distrib[myrank] ];
+#endif
+	
+	t0 = MPI_Wtime();
+	MPI_Reduce_scatter(sendbuf,
+                       recvbuf,
+                       recvcnt,
+                       MPI_DOUBLE,
+                       MPI_SUM,
+                       MPI_COMM_WORLD);
+	t1 = MPI_Wtime();
+	double tReduceScatter = t1-t0;
+	double tReduceScatter_max;
+	MPI_Allreduce(&tReduceScatter, &tReduceScatter_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	if(myrank == 0) printf("Time for reduce-scatter of %d elements: %lf\n", m*n, tReduceScatter_max);
+
+#ifdef USE_CUBLAS
+    CUDA_CHECK(cudaFree(sendbuf));
+    CUDA_CHECK(cudaFree(recvbuf));
+#else
+	delete [] sendbuf;
+	delete [] recvbuf;
+#endif
+	delete [] recvcnt;
+	delete [] distrib;
+	delete [] sendbuf_h;
+
+    /*
+    // Allgather test
     int *ranks = NULL;
     int* rcounts = NULL;
     int* rdispls = NULL;
@@ -161,6 +215,7 @@ int main(int argc, char* argv[]) {
     delete[] sbuf;
     delete[] rbuf;
 #endif
+    */
 
     // Finalize MPI
     MPI_Finalize();
