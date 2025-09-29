@@ -16,6 +16,7 @@ module load mpi/intel/2021.10.0
 conda activate /home/rahmm224/Summer2025Env
 PY="/deac/csc/ballardGrp/rahmm224/new_nystrom/nystrom-distributed/CIFAR10bianry.py"
 path="./data"
-python $PY -path $path
+kernel="linear"
+python $PY -path $path -kernel $kernel
 
 conda deactivate
