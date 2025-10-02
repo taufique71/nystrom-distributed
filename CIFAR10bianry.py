@@ -5,6 +5,7 @@ from torchvision.datasets import CIFAR10
 parser = argparse.ArgumentParser()
 parser.add_argument("-path", "--path", type=str, help="Path to save binary file", default="./data")
 parser.add_argument("-kernel", "--kernel", type=str, help="Kernel to generate gram matrix", default="linear")
+parser.add_argument("-sigma", "--sigma", type=int, help="Standard deviation for RBF kernel", default=100)
 
 args = parser.parse_args()
 
@@ -17,11 +18,13 @@ print(f"Shape of Input matrix: {A_Mat.shape}")
 
 if args.kernel == "linear":
     A_Mat = A_Mat @ A_Mat.T
-elif args.kernel == "multiquadric":
+elif args.kernel == "rbf":
+    A_Mat = np.random.randn(100, 1000)
+    sigma = args.sigma
     X_norm = np.sum(A_Mat**2, axis=1).reshape(-1, 1)
     sq_dists = X_norm + X_norm.T - 2 * A_Mat @ A_Mat.T
-    sq_dists = np.maximum(sq_dists, 0)  # numerical stability
-    A_Mat = np.sqrt(sq_dists)
+    sq_dists = -1 * sq_dists
+    A_Mat = np.exp(sq_dists/(2*sigma*sigma))
 
 data = A_Mat.flatten().astype(np.float64)
 
