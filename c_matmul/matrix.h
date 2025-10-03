@@ -416,10 +416,12 @@ ParMat matmul(ParMat& A, ParMat& B){
 	tMemMove += (t1-t0);
 	
 
+    CUDA_CHECK(cudaDeviceSynchronize());
 	t0 = MPI_Wtime();
     cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                 &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                 &cblas_beta, cblas_c, cblas_ldc);
+    CUDA_CHECK(cudaDeviceSynchronize());
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
@@ -551,6 +553,7 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
         CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
         CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
         CURAND_CHECK(curandGenerateUniformDouble(gen, recvB, B.nRowGlobal * B.nColGlobal ));
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
         recvB = new double[B.nRowGlobal * B.nColGlobal]; // Allocate for received B matrix
         Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
@@ -588,10 +591,12 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
 	tMemMove += (t1-t0);
 	
 
+    CUDA_CHECK(cudaDeviceSynchronize());
 	t0 = MPI_Wtime();
     cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                 &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                 &cblas_beta, cblas_c, cblas_ldc);
+    CUDA_CHECK(cudaDeviceSynchronize());
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 
@@ -682,6 +687,7 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
         CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
         CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
         CURAND_CHECK(curandGenerateUniformDouble(gen, B.localMat, (B.nRowLocal * B.nColLocal)));
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
         //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
         Xoroshiro128Plus prng(myrank, myrank); // Defined in prng.cpp
@@ -764,10 +770,12 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
 	t1 = MPI_Wtime();
 	tMemMove += (t1-t0);
 	
+    CUDA_CHECK(cudaDeviceSynchronize());
 	t0 = MPI_Wtime();
     cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                 &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                 &cblas_beta, cblas_c, cblas_ldc);
+    CUDA_CHECK(cudaDeviceSynchronize());
 	t1 = MPI_Wtime();
 	tDgemm += (t1-t0);
 

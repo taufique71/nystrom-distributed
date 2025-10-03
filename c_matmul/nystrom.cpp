@@ -15,7 +15,7 @@
 alg:
 	- nystrom_1d_noredist_1d
 	- nystrom_1d_redist_1d
-	- nystrom_2d_redist_1d_redundant
+	- nystrom_2d_noredist_1d
 */
 int main(int argc, char* argv[]) {
     // Initialize MPI
@@ -128,7 +128,7 @@ int main(int argc, char* argv[]) {
         ParMat Z(r, r, grid2, 'C');
 		nystrom_1d_redist_1d(A, r, Y, Z);
     }
-    else if (alg == "nystrom-2d-redist-1d-redundant") {
+    else if (alg == "nystrom-2d-noredist-1d") {
         // Create the process grid
         ProcGrid grid1(matmul1p1, matmul1p2, matmul1p3);
         ProcGrid grid2(matmul2p1, matmul2p2, matmul2p3);
@@ -152,7 +152,7 @@ int main(int argc, char* argv[]) {
         ParMat Y(n, r, grid2, 'B', rowDistribY, colDistribY);
         //Y.printLocalMatrix();
         ParMat Z(r, r, grid2, 'C', colDistribY, colDistribY); 
-        nystrom_2d_redist_1d_redundant(A, r, Y, Z);
+        nystrom_2d_noredist_1d(A, r, Y, Z);
     }
 
     // Finalize MPI

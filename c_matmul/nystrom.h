@@ -17,6 +17,8 @@
     #include <curand_kernel.h>
     #include <curand.h>
 
+    #define TILE_SIZE 32
+
     #define CUDA_CHECK(call) { \
         cudaError_t err = call; \
         if (err != cudaSuccess) { \
@@ -42,6 +44,36 @@
 #include "prng.h"
 #include "utils.h"
 
+extern "C" void unpack(double* x);
+
+extern void nystrom_1d_redist_1d_unpack(
+        double* odata, 
+        double* idata, 
+        int nRow,
+        int nCol,
+        int* recvDispls,
+        int* nRowToRecvPrefixSum,
+        int gridDimX,
+        int gridDimY,
+        int gridDimZ,
+        int blockDimX,
+        int blockDimY
+        );
+
+extern void nystrom_2d_noredist_1d_pack(
+        double* odata,
+        double* idata,
+        int nRow,
+        int nCol,
+        int* sendDispls,
+        int* nRowToSendPrefixSum,
+        int gridDimX,
+        int gridDimY,
+        int gridDimZ,
+        int blockDimX,
+        int blockDimY
+        );
+
 void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	double t0, t1, t2, t3;
     double tGenOmega1=0.0, tDataMove1=0.0, tDgemm1=0.0;
@@ -62,9 +94,14 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 
 	//ParMat Y(A.nRowGlobal, r, grid, 'C');
 	//if(myrank == 0) printf("matmul1 in %dx%dx%d grid\n", A.grid.nProcRow, A.grid.nProcCol, A.grid.nProcFib);
+
+	double tStart = MPI_Wtime();
 	
     double* Omega = NULL;
     {
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&Omega), sizeof(double) * (n * r) ) );
@@ -79,6 +116,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
         CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
         CURAND_CHECK(curandGenerateUniformDouble(gen, Omega, n * r ));
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
         Omega = new double[n * r]; // Allocate for received B matrix
         Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
@@ -86,6 +124,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         for (size_t i = 0; i < n * r; ++i) {
             Omega[i] = prng.nextDouble();
         }
+#endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
 #endif
         t1 = MPI_Wtime();
         tGenOmega1 = t1-t0;
@@ -104,6 +145,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		auto cblas_c = Y.localMat; 
 		auto cblas_ldc = A.nRowLocal; 
 										 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         cublasOperation_t transA = CUBLAS_OP_N;
@@ -112,6 +156,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                     &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                     &cblas_beta, cblas_c, cblas_ldc);
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
 
         cblas_dgemm(
@@ -131,6 +176,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
             cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
         );
 
+#endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
 #endif
         t1 = MPI_Wtime();
         tDgemm1 = (t1-t0);
@@ -161,6 +209,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		auto cblas_c = contribZ; 
 		auto cblas_ldc = r; 
 										 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         cublasOperation_t transA = CUBLAS_OP_T;
@@ -169,6 +220,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                     &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                     &cblas_beta, cblas_c, cblas_ldc);
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
 		cblas_dgemm(
 			CblasColMajor, // Column major order. `Layout` parameter of MKL cblas call.
@@ -187,6 +239,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 			cblas_ldc // Leading dimension of C. `ldc` param of MKL cblas call.
 		);
 #endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t1 = MPI_Wtime();
         tDgemm2 = t1-t0;
 	}
@@ -200,6 +255,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		int nColToRecv = Z.nColLocal; // Data structure is already prepared, just collect necessary information
 		int* nColToSend = new int[commSize]; // Change to commSize for column-wise collection
 		
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t0 = MPI_Wtime();
 
 		// Gather the number of columns from all processes in the column grid
@@ -219,6 +277,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		// Scatter and reduce the relevant pieces of C
 		MPI_Reduce_scatter(contribZ, Z.localMat, nValToSend, MPI_DOUBLE, MPI_SUM, grid2.colWorld);
 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t1 = MPI_Wtime();
         tReduceScatter = t1-t0;
 
@@ -237,6 +298,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	//delete[] multC;
 	delete[] contribZ;
 #endif
+    double tEnd = MPI_Wtime();
 
     double tGenOmega1_max=0.0, tDataMove1_max=0.0, tDgemm1_max=0.0;
     double tGenOmega1_min=0.0, tDataMove1_min=0.0, tDgemm1_min=0.0;
@@ -255,6 +317,7 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	MPI_Allreduce(&tReduceScatter, &tReduceScatter_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
 	if(myrank == 0){
+        printf("Total time: %lf sec\n",tEnd-tStart);
         printf("Time to generate Omega: %lf sec\n", tGenOmega1_max);
         printf("Time for first dgemm: %lf sec\n", tDgemm1_max);
         printf("Time for second dgemm: %lf sec\n", tDgemm2_max);
@@ -284,6 +347,8 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	cublasCreate(&handle);
 #endif
 
+    double tStart = MPI_Wtime();
+
 	// Compute temporary Y on grid1, then redistribute for matmul2 on grid2
 	ParMat Ytemp(A.nRowGlobal, r, grid1, 'C');
 
@@ -291,6 +356,9 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	
     double* Omega = NULL;
     {
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&Omega), sizeof(double) * (n * r) ) );
@@ -305,6 +373,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
         CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
         CURAND_CHECK(curandGenerateUniformDouble(gen, Omega, n * r ));
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
         Omega = new double[n * r]; // Allocate for received B matrix
         Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
@@ -312,6 +381,9 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         for (size_t i = 0; i < n * r; ++i) {
             Omega[i] = prng.nextDouble();
         }
+#endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
 #endif
         t1 = MPI_Wtime();
         tGenOmega1 = t1-t0;
@@ -330,6 +402,9 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		auto cblas_c = Ytemp.localMat; // Local Ytemp
 		auto cblas_ldc = A.nRowLocal; // Stride length to iterate over the columns of local A
 										 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         cublasOperation_t transA = CUBLAS_OP_N;
@@ -338,6 +413,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                     &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                     &cblas_beta, cblas_c, cblas_ldc);
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
 
         cblas_dgemm(
@@ -358,6 +434,9 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         );
 
 #endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t1 = MPI_Wtime();
         tDgemm1 = (t1-t0);
 	}
@@ -371,37 +450,52 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		int commSize = 0;
 		MPI_Comm_size(grid2.fibWorld, &commSize); // Row world because, column distribution
 
+        int *nColToSend = NULL;
+        int *nValToSend = NULL;
+        int *nRowToRecv = NULL;
+        int *nRowToRecvPrefixSum = NULL;
+        int *nValToRecv = NULL;
+        int *sendDispls = NULL;
+        int *recvDispls = NULL;
+
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&nColToSend), sizeof(int) * (commSize) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&nValToSend), sizeof(int) * (commSize) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&nRowToRecv), sizeof(int) * (commSize) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&nRowToRecvPrefixSum), sizeof(int) * (commSize + 1) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&nValToRecv), sizeof(int) * (commSize) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&sendDispls), sizeof(int) * (commSize + 1) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&recvDispls), sizeof(int) * (commSize + 1) ) );
+#else
+		nColToSend = new int[commSize]; // Number of columns to send to each process
+		nValToSend = new int[commSize]; // Number of values to send to each process
+		nRowToRecv = new int[commSize]; // Number of rows to receive from each process
+		nRowToRecvPrefixSum = new int[commSize+1]; 
+		nValToRecv = new int[commSize]; // Number of values to receive from each process
+		sendDispls = new int[commSize + 1];
+		recvDispls = new int[commSize + 1];
+#endif
+
 		// TODO: Change according to Scalapack distribution
 		// Y has row-wise distribution. Now change to columns-wise distribution on second grid
 		int nColPerProc = Ytemp.nColLocal / commSize; // Target number of columns by process other than the last process
-		int *nColToSend = new int[commSize]; // Number of columns to send to each process
 		for (int p = 0; p < commSize; p++){
 			if ( p < (commSize - 1) ) nColToSend[p] = nColPerProc;
 			else nColToSend[p] = Ytemp.nColGlobal - nColPerProc * p;
-		}
-
-		int *nValToSend = new int[commSize]; // Number of values to send to each process
-		for (int p = 0; p < commSize; p++){
 			nValToSend[p] = nColToSend[p] * Ytemp.nRowLocal;
 		}
-
-		int* sendDispls = new int[commSize + 1];
+        
 		sendDispls[0] = 0;
 		std::partial_sum(nValToSend, nValToSend + commSize, sendDispls + 1);
 
 		int nRowPerProc = Ytemp.nRowGlobal / commSize; // Number of rows by process other than the last process
-		int *nRowToRecv = new int[commSize]; // Number of rows to receive from each process
 		for (int p = 0; p < commSize; p++){
 			if ( p < (commSize - 1) ) nRowToRecv[p] = nRowPerProc;
 			else nRowToRecv[p] = Ytemp.nRowGlobal - nRowPerProc * p;
-		}
-
-		int *nValToRecv = new int[commSize]; // Number of values to receive from each process
-		for (int p = 0; p < commSize; p++){
 			nValToRecv[p] = nRowToRecv[p] * nColToSend[grid2.rankInFibWorld];
 		}
-
-		int* recvDispls = new int[commSize + 1];
+        nRowToRecvPrefixSum[0] = 0;
+		std::partial_sum(nRowToRecv, nRowToRecv + commSize, nRowToRecvPrefixSum + 1);
 		recvDispls[0] = 0;
 		std::partial_sum(nValToRecv, nValToRecv + commSize, recvDispls + 1);
 		
@@ -411,6 +505,9 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #else
 		recvBuff = new double[recvDispls[commSize]];
 #endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t3 = MPI_Wtime();
 		double tBuffPrep = t3-t2;
 		
@@ -419,41 +516,81 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		MPI_Alltoallv(Ytemp.localMat, nValToSend, sendDispls, MPI_DOUBLE,
 				   recvBuff, nValToRecv, recvDispls, MPI_DOUBLE,
 				   grid2.fibWorld);
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t1 = MPI_Wtime();
 		tAll2All = t1-t0;
 
 		// Unpacking
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t2 = MPI_Wtime();
-		for(int c = 0; c < nColToSend[grid2.rankInFibWorld]; c++){
-			size_t offset = 0;
-			for(int p = 0; p < commSize; p++){
 #ifdef USE_CUBLAS
-                CUDA_CHECK( cudaMemcpy(
-                        Y.localMat + c * Y.nRowLocal + offset, 
-                        recvBuff + recvDispls[grid2.rankInFibWorld] + c * nRowToRecv[p], 
-                        sizeof(double)*nRowToRecv[p], 
-                        cudaMemcpyDeviceToDevice) );
+        CUDA_CHECK(cudaDeviceSynchronize());
+
+		//for(int c = 0; c < nColToSend[grid2.rankInFibWorld]; c++){
+			//for(int p = 0; p < commSize; p++){
+                ////CUDA_CHECK( cudaMemcpy(
+                        ////Y.localMat + c * Y.nRowLocal + offset, 
+                        ////recvBuff + recvDispls[grid2.rankInFibWorld] + c * nRowToRecv[p], 
+                        ////sizeof(double)*nRowToRecv[p], 
+                        ////cudaMemcpyDeviceToDevice) );
+			//}
+		//}
+        int blockDimX = TILE_SIZE;
+        int blockDimY = TILE_SIZE;
+        //int gridDimX = std::ceil( (1.0 * std::ceil( (1.0 * Ytemp.nColLocal) / commSize ) ) / blockDimX);
+        //int gridDimY = std::ceil( (1.0 * Ytemp.nRowLocal) / blockDimY );
+        int gridDimX = std::ceil( (1.0 * nColToSend[grid2.rankInFibWorld]) / blockDimX );
+        int gridDimY = std::ceil( (1.0 * std::ceil( (1.0 * Ytemp.nRowGlobal) / commSize ) ) / blockDimY);
+        int gridDimZ = commSize;
+        nystrom_1d_redist_1d_unpack(
+                Y.localMat, 
+                recvBuff, 
+                Y.nRowLocal, // Y.nRowGlobal would be the same, as Y is 1D column distributed
+                nColToSend[grid2.rankInFibWorld],
+                recvDispls,
+                nRowToRecvPrefixSum,
+                gridDimX,
+                gridDimY,
+                gridDimZ,
+                blockDimX,
+                blockDimY
+        );
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
-				memcpy(Y.localMat + c * Y.nRowLocal + offset, 
+		for(int c = 0; c < nColToSend[grid2.rankInFibWorld]; c++){
+			for(int p = 0; p < commSize; p++){
+				memcpy(Y.localMat + c * Y.nRowLocal + nRowToRecvPrefixSum[p], 
 						recvBuff + recvDispls[grid2.rankInFibWorld] + c * nRowToRecv[p], 
 						sizeof(double)*nRowToRecv[p]
 				);
-#endif
-				offset += nRowToRecv[p];
 			}
 		}
+#endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t3 = MPI_Wtime();
 		tUnpack = t3-t2;
 
+#ifdef USE_CUBLAS
+		CUDA_CHECK(cudaFree(nColToSend));
+		CUDA_CHECK(cudaFree(nValToSend));
+		CUDA_CHECK(cudaFree(nRowToRecv));
+		CUDA_CHECK(cudaFree(nValToRecv));
+		CUDA_CHECK(cudaFree(sendDispls));
+		CUDA_CHECK(cudaFree(recvDispls));
+		CUDA_CHECK(cudaFree(recvBuff));
+#else
 		delete[] nColToSend;
 		delete[] nValToSend;
 		delete[] sendDispls;
 		delete[] nRowToRecv;
 		delete[] nValToRecv;
 		delete[] recvDispls;
-#ifdef USE_CUBLAS
-		CUDA_CHECK(cudaFree(recvBuff));
-#else
 		delete[] recvBuff;
 #endif
 
@@ -474,6 +611,9 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		auto cblas_c = Z.localMat; // Local Z
 		auto cblas_ldc = r; // Stride length to iterate over columns of local Z
 										 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t0 = MPI_Wtime();
 
 #ifdef USE_CUBLAS
@@ -503,6 +643,9 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 		);
 #endif
 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
 		t1 = MPI_Wtime();
 		tDgemm2 = t1-t0;
 	}
@@ -513,6 +656,8 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #else
 	delete[] Omega;
 #endif
+
+    double tEnd = MPI_Wtime();
 
     double tGenOmega1_max=0.0, tDataMove1_max=0.0, tDgemm1_max=0.0, tUnpack_max=0.0, tAll2All_max=0.0;
     double tGenOmega1_min=0.0, tDataMove1_min=0.0, tDgemm1_min=0.0, tUnpack_min=0.0, tAll2All_min=0.0;
@@ -533,6 +678,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	MPI_Allreduce(&tDgemm2, &tDgemm2_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
 	if(myrank == 0){
+        printf("Total time: %lf sec\n", tEnd-tStart);
         printf("Time to generate Omega: %lf sec\n", tGenOmega1_max);
         printf("Time for first dgemm: %lf sec\n", tDgemm1_max);
         printf("Time for all2all: %lf sec\n", tAll2All_max);
@@ -543,7 +689,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	return;
 }
 
-void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
+void nystrom_2d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
     double t0, t1, t2, t3;
     double tGenOmega1=0.0, tDataMove1=0.0, tDgemm1=0.0, tPack1=0.0, tReduceScatter1=0.0;
     double tGenOmega2=0.0, tDataMove2=0.0, tDgemm2=0.0, tReduceScatter2=0.0;
@@ -558,6 +704,8 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	cublasHandle_t handle;
 	cublasCreate(&handle);
 #endif
+
+    double tStart = MPI_Wtime();
     
     int n = A.nColGlobal;
 
@@ -565,6 +713,9 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
     
     double* Omega = NULL;
     {
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&Omega), sizeof(double) * (n * r) ) );
@@ -579,6 +730,7 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
         CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
         CURAND_CHECK(curandGenerateUniformDouble(gen, Omega, n * r ));
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
         Omega = new double[n * r]; // Allocate for received B matrix
         Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
@@ -586,6 +738,9 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         for (size_t i = 0; i < n * r; ++i) {
             Omega[i] = prng.nextDouble();
         }
+#endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
 #endif
         t1 = MPI_Wtime();
         tGenOmega1 = t1-t0;
@@ -617,6 +772,9 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         auto cblas_ldc = cblas_lda; // Number of rows of the local copy of the partial result
                                     // Same as the number of rows of the local copy of A
 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         cublasOperation_t transA = CUBLAS_OP_N;
@@ -625,6 +783,7 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                     &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                     &cblas_beta, cblas_c, cblas_ldc);
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
 
         cblas_dgemm(
@@ -645,28 +804,46 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         );
 
 #endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t1 = MPI_Wtime();
         tDgemm1 = (t1-t0);
     }
 
     {
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
+        int* sendrows = NULL;
+        int* sendrowsDispls = NULL;
+        int* sendcnt = NULL;
+        int* sdispls = NULL;
+        int* recvcnt = NULL;
+        int* rdispls = NULL;
+        double* sendbuff = NULL;
+#ifdef USE_CUBLAS
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&sendrows), sizeof(int) * (A.nProcCol) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&sendrowsDispls), sizeof(int) * (A.nProcCol + 1) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&sendcnt), sizeof(int) * (A.nProcCol) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&sdispls), sizeof(int) * (A.nProcCol + 1) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&recvcnt), sizeof(int) * (A.nProcCol) ) );
+        CUDA_CHECK( cudaMallocManaged(reinterpret_cast<void **>(&rdispls), sizeof(int) * (A.nProcCol + 1) ) );
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&sendbuff), sizeof(double) * (A.nRowLocal * r) ) );
+#else
+        sendrows = new int[A.nProcCol];
+        sendrowsDispls = new int[A.nProcCol + 1];
+        sendcnt = new int[A.nProcCol];
+        sdispls = new int[A.nProcCol + 1];
+        recvcnt = new int[A.nProcCol];
+        rdispls = new int[A.nProcCol + 1];
+        sendbuff = new double[A.nRowLocal * r];
+#endif
         t0 = MPI_Wtime();
-        int* sendrows = new int[A.nProcCol];
-        int* sendrowsDispls = new int[A.nProcCol + 1];
         findSplits( A.nRowLocal, A.nProcCol, sendrows ); // Defined in utils.h
         sendrowsDispls[0] = 0;
         std::partial_sum(sendrows, sendrows+A.nProcCol, sendrowsDispls+1); 
 
-        int* sendcnt = new int[A.nProcCol];
-        int* sdispls = new int[A.nProcCol + 1];
-        int* recvcnt = new int[A.nProcCol];
-        int* rdispls = new int[A.nProcCol + 1];
-        double* sendbuff;
-#ifdef USE_CUBLAS
-        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&sendbuff), sizeof(double) * (A.nRowLocal * r) ) );
-#else
-        sendbuff = new double[A.nRowLocal * r];
-#endif
         for(int i = 0; i < A.nProcCol; i++){
             sendcnt[i] = sendrows[i] * r;
             recvcnt[i] = sendrows[A.colRank] * r;
@@ -675,41 +852,78 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         std::partial_sum(sendcnt, sendcnt+A.nProcCol, sdispls+1); 
         rdispls[0] = 0;
         std::partial_sum(recvcnt, recvcnt+A.nProcCol, rdispls+1); 
+#ifdef USE_CUBLAS
+        //for (int i = 0; i < r; i++){
+            //for(int p = 0; p < A.nProcCol; p++){
+                //CUDA_CHECK( cudaMemcpy(
+                        //sendbuff + sdispls[p] + (sendrows[p] * i), 
+                        //Ytemp + (A.nRowLocal * i) + sendrowsDispls[p], 
+                        //sizeof(double) * (sendrows[p]), 
+                        //cudaMemcpyDeviceToDevice) );
+            //}
+        //}
+        int blockDimX = TILE_SIZE;
+        int blockDimY = TILE_SIZE;
+        int gridDimX = std::ceil( (1.0 * r) / blockDimX );
+        int gridDimY = std::ceil( (1.0 * std::ceil( (1.0 * A.nRowLocal) / A.nProcCol ) ) / blockDimY);
+        int gridDimZ = A.nProcCol;
+        nystrom_2d_noredist_1d_pack(
+            sendbuff,
+            Ytemp,
+            A.nRowLocal,
+            r,
+            sdispls,
+            sendrowsDispls,
+            gridDimX,
+            gridDimY,
+            gridDimZ,
+            blockDimX,
+            blockDimY
+        );
+        CUDA_CHECK(cudaDeviceSynchronize());
+#else
         for (int i = 0; i < r; i++){
             for(int p = 0; p < A.nProcCol; p++){
-#ifdef USE_CUBLAS
-                CUDA_CHECK( cudaMemcpy(
-                        sendbuff + sdispls[p] + (sendrows[p] * i), 
-                        Ytemp + (A.nRowLocal * i) + sendrowsDispls[p], 
-                        sizeof(double) * (sendrows[p]), 
-                        cudaMemcpyDeviceToDevice) );
-#else
                 memcpy(sendbuff + sdispls[p] + (sendrows[p] * i), 
                         Ytemp + (A.nRowLocal * i) + sendrowsDispls[p], 
                         sizeof(double) * (sendrows[p]) );
-#endif
             }
         }
+#endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t1 = MPI_Wtime();
         tPack1 = (t1-t0);
 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
         MPI_Reduce_scatter(sendbuff, Y.localMat, recvcnt, MPI_DOUBLE, MPI_SUM, grid2.colWorld);
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t1 = MPI_Wtime();
         tReduceScatter1 = (t1-t0);
 
 #ifdef USE_CUBLAS
+        CUDA_CHECK(cudaFree(sendrows));
+        CUDA_CHECK(cudaFree(sendrowsDispls));
+        CUDA_CHECK(cudaFree(sendcnt));
+        CUDA_CHECK(cudaFree(sdispls));
+        CUDA_CHECK(cudaFree(recvcnt));
+        CUDA_CHECK(cudaFree(rdispls));
         CUDA_CHECK(cudaFree(sendbuff));
 #else
-        delete [] sendbuff;
-#endif
-
         delete [] sendrows;
         delete [] sendrowsDispls;
         delete [] sendcnt;
         delete [] sdispls;
         delete [] recvcnt;
         delete [] rdispls;
+        delete [] sendbuff;
+#endif
     }
 
     double* Ztemp = NULL;
@@ -738,6 +952,9 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         auto cblas_ldc = r; // Number of rows of the local copy of the partial result
                             // Same as the number of rows of Omega.T which is r
 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         cublasOperation_t transA = CUBLAS_OP_T;
@@ -746,6 +963,7 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                     &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                     &cblas_beta, cblas_c, cblas_ldc);
+        CUDA_CHECK(cudaDeviceSynchronize());
 #else
 
         cblas_dgemm(
@@ -766,6 +984,9 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         );
 
 #endif
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t1 = MPI_Wtime();
         tDgemm2 = (t1-t0);
     }
@@ -778,8 +999,14 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
         int sum = std::accumulate(recvcnt, recvcnt + Z.nProcFib, 0);
         assert(sum == r*r);
 
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t0 = MPI_Wtime();
         MPI_Reduce_scatter(Ztemp, Z.localMat, recvcnt, MPI_DOUBLE, MPI_SUM, Z.fibWorld);
+#ifdef BARRIER
+		MPI_Barrier(MPI_COMM_WORLD);
+#endif
         t1 = MPI_Wtime();
         tReduceScatter2 = (t1-t0);
 
@@ -797,6 +1024,8 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
     delete[] Ytemp;
     delete[] Ztemp;
 #endif
+
+    double tEnd = MPI_Wtime();
 
     double tGenOmega1_max=0.0, tDataMove1_max=0.0, tDgemm1_max=0.0, tPack1_max=0.0, tReduceScatter1_max=0.0;
     double tGenOmega1_min=0.0, tDataMove1_min=0.0, tDgemm1_min=0.0, tPack1_min=0.0, tReduceScatter1_min=0.0;
@@ -819,6 +1048,7 @@ void nystrom_2d_redist_1d_redundant(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	MPI_Allreduce(&tReduceScatter2, &tReduceScatter2_min, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
 
 	if(myrank == 0){
+        printf("Total time: %lf sec\n", tEnd-tStart);
         printf("Time to generate Omega: %lf sec\n", tGenOmega1_max);
         printf("Time for first dgemm: %lf sec\n", tDgemm1_max);
         printf("Time to pack for reduce-scatter: %lf sec\n", tPack1_max);

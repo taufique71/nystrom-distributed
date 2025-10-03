@@ -9,15 +9,15 @@
 
 #SBATCH -t 0:10:00
 
-#SBATCH -N 1
+#SBATCH -N 128
 #SBATCH -J matmul
 #SBATCH -o slurm.matmul.o%j
 
 # https://docs.nersc.gov/systems/perlmutter/architecture/
 #SYSTEM=perlmutter-cpu
-SYSTEM=perlmutter-gpu-cpu
-#SYSTEM=perlmutter-gpu
-N_NODE=1
+#SYSTEM=perlmutter-gpu-cpu
+SYSTEM=perlmutter-gpu
+N_NODE=${SLURM_NNODES}
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
 	# https://docs.nersc.gov/systems/perlmutter/architecture/#cpu-nodes
