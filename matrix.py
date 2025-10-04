@@ -103,7 +103,16 @@ class ParMat:
             # print(self.localMat.shape)
             # print(self.localMat)
 
-    def gen_symm_pos_semidef(self, rank=100):
+    def gen_symm_pos_semidef(self, nRowLocal = None, nColLocal = None, localRowStart = None, localColStart =None, rank=100, dtype=np.float64):
+        if localRowStart is not None:
+            self.localRowStart = localRowStart
+        if localColStart is not None:
+            self.localColStart = localColStart
+        if nRowLocal is not None:
+            self.nRowLocal = nRowLocal
+        if nColLocal is not None:
+            self.nColLocal = nColLocal
+
         elements = self.nRowGlobal * rank
         A = np.arange(elements)
         A = A.reshape(self.nRowGlobal, rank)
@@ -114,6 +123,11 @@ class ParMat:
                 idxRowGlobal = self.localRowStart + idxRowLocal
                 idxColGlobal = self.localColStart + idxColLocal
                 self.localMat[idxRowLocal,idxColLocal] = A[idxRowGlobal,idxColGlobal]
+    def gen_A_1d2d(self, p2, p3, nRowLocal, dtype=np.float64):
+        self.localMat = np.ones( (nRowLocal, self.nColGlobal), dtype=dtype, order='F')
+
+    def gen_A_2d1d(self, p2, p3, nRowLocal, nColLocal, dtype=np.float64):
+        self.localMat = np.ones( (nRowLocal, nColLocal), dtype=dtype, order='F')
 
     def generate_rand(self,seed, generator="xoroshiro"):
         # self.localMat = np.zeros( (self.nRowLocal, self.nColLocal), dtype=dtype, order='F')
@@ -121,6 +135,7 @@ class ParMat:
         if generator == 'xoroshiro':
             prng = Generator(Xoroshiro128(seed, plusplus=False))
         prng.random(self.localMat.shape, dtype=dtype, out=self.localMat)
+
 
     def allGather(self):
         if self.frontFace == 'A':

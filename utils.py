@@ -1,5 +1,6 @@
 from mpi4py import MPI
 import numpy as np
+from torchvision.datasets import CIFAR10
 
 
 def npDtypeToMpiDtype(npDtype):
@@ -135,18 +136,98 @@ def splitAndReduceScatter(mat, world, split="col"):
         nValToRecv =  nRowToRecv * mat.shape[1]
         splitLocs = np.zeros(world.Get_size() + 1, dtype=npDtype)
         np.cumsum(nRowToRecv, out=splitLocs[1:])
-        targetMat = np.zeros((nRowToRecv[rankInWorld], mat.shape[1]), dtype=npDtype, order='C')
 
+        targetMat = np.zeros((nRowToRecv[rankInWorld], mat.shape[1]), dtype=npDtype, order='F')
+        revMat = np.zeros((nRowToRecv[rankInWorld] * mat.shape[1]), dtype=npDtype, order='F')
+        
         t1 = MPI.Wtime()
 
-        world.Reduce_scatter([mat, mpiDtype], [targetMat, nValToRecv[rankInWorld], mpiDtype], nValToRecv, op=MPI.SUM)
+        world.Reduce_scatter([mat, mpiDtype], [revMat, nValToRecv[rankInWorld], mpiDtype], nValToRecv, op=MPI.SUM)
 
         t2 = MPI.Wtime()
-
+        for r in range(nRowToRecv[rankInWorld]):
+            targetMat[r, :] = revMat[r * mat.shape[1] : (r + 1) * mat.shape[1]]
+        
         rsTime = t2-t1
         totTime = t2-t0
         
         return targetMat, rsTime, totTime
 
-    M.localMat = targetM
+def Reduce_ScallaPackScatter(mat, world, colSplitsY2d, split="col"):
+    # Split the local matrix into equal chunks, redistributes the chunks of M along the world and performs reduction
+    npDtype = mat.dtype
+    mpiDtype = npDtypeToMpiDtype(npDtype)
+
+    rankInWorld = world.Get_rank()
+
+    rsTime = 0.0
+    totTime = 0.0
+    
+    if split == 'col':
+        
+        t0 = MPI.Wtime()
+        nColToRecv = np.array(colSplitsY2d) 
+        
+        nValToRecv = mat.shape[0] * nColToRecv
+        splitLocs = np.zeros(world.Get_size() + 1, dtype=npDtype)
+        np.cumsum(nColToRecv, out=splitLocs[1:])
+        targetMat = np.zeros((mat.shape[0], nColToRecv[rankInWorld]), dtype=npDtype, order='F')
+
+        t1 = MPI.Wtime()
+        # Supports vector version even though there is no `v` suffix. Similar case in C API
+        # https://mpi4py.readthedocs.io/en/stable/reference/mpi4py.MPI.Comm.html#mpi4py.MPI.Comm.Reduce_scatter
+        world.Reduce_scatter([mat, mpiDtype], [targetMat, nValToRecv[rankInWorld], mpiDtype], nValToRecv, op=MPI.SUM)
+        t2 = MPI.Wtime()
+        rsTime = t2-t1
+        totTime = t2-t0
+
+        return targetMat, rsTime, totTime   
+
+def ScaLAPACK(n, p):
+        ceil = int(np.ceil(n / p))
+        dist = np.full(p, ceil, dtype=int)
+        dist[-1] = n - (p - 1) * ceil
+        return dist
+def hierarchical_dist(n, p1, p2):
+    dist = ScaLAPACK(n, p1)
+    double_scalapack = np.concatenate([ScaLAPACK(r, p2) for r in dist])
+
+    return double_scalapack
+
+def getCIFAR10GramMatrix(path, world, n, nRowLocal, nColLocal, localRowStart, localColStart):
+
+    lsizes = [nRowLocal, nColLocal]
+    gsizes = [n, n]
+    starts = [localRowStart, localColStart]
+    # Open file collectively
+    fh = MPI.File.Open(world, path, MPI.MODE_RDONLY)
+
+    base_type = MPI.DOUBLE  
+
+    # Define subarray view
+    view = base_type.Create_subarray(
+        sizes=gsizes,        # global tensor shape
+        subsizes=lsizes,     # local block shape
+        starts=starts,       # starting indices of local block
+        # order=MPI.ORDER_FORTRAN  # column-major (Fortran order)
+    )
+    view.Commit()
+
+    disp = 0  # bite offset to skip into the file before MPI applies the view
+    fh.Set_view(disp, filetype=view)
+
+    # Allocate buffer for local block
+    buf = np.empty(np.prod(lsizes), dtype=np.float64)
+
+    # Collective read: each process gets its block
+    fh.Read_all(buf)
+
+    fh.Close()
+    view.Free()
+    localdata = np.empty(lsizes, dtype=np.float64, order='F')
+    # Copy data from buffer to local array
+    for i in range(lsizes[0]):
+        localdata[i, :] = buf[i * lsizes[1]:(i + 1) * lsizes[1]]
+
+    return localdata
 
