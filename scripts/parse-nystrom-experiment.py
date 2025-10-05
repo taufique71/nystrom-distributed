@@ -7,7 +7,7 @@ def parse_experiment_file(file_path):
     
     # nystrom-1d-noredist-1d_cpp_perlmutter-gpu_32_128_32_50000_5000_128x1x1_128x1x1.10
     parts = re.split(r"[_.x]+", filename)
-    print(parts)
+    # print(parts)
     # parts = filename.split('_.')
     alg = parts[0]
     impl = parts[1]
@@ -36,9 +36,11 @@ def parse_experiment_file(file_path):
         assert n == int(match.group(2)) # Columns of matrix A
         assert r == int(match.group(3)) # Target rank of Nystrom
     else:
-        raise ValueError("Line format is incorrect.")
+        # raise ValueError("Line format is incorrect.")
+        return None
 
     # Extract timing information
+    total_time = re.search(r'Total time:\s*([\d.]+) sec', content)
     gen_omega_time = re.search(r'Time to generate Omega:\s*([\d.]+) sec', content)
     dgemm1_time = re.search(r'Time for first dgemm:\s*([\d.]+) sec', content)
     dgemm2_time = re.search(r'Time for second dgemm:\s*([\d.]+) sec', content)
@@ -64,6 +66,7 @@ def parse_experiment_file(file_path):
         'matmul2p1': matmul2p1,
         'matmul2p2': matmul2p2,
         'matmul2p3': matmul2p3,
+        'total_time': float(total_time.group(1)) if total_time else 0,
         'gen_omega_time': float(gen_omega_time.group(1)) if gen_omega_time else 0,
         'dgemm1_time': float(dgemm1_time.group(1)) if dgemm1_time else 0,
         'dgemm2_time': float(dgemm2_time.group(1)) if dgemm2_time else 0,
@@ -78,7 +81,12 @@ def collect_experiment_data(directory):
     for filename in os.listdir(directory):
         file_path = os.path.join(directory, filename)
         experiment_data = parse_experiment_file(file_path)
-        data.append(experiment_data)
+        if experiment_data is None:
+            print("[.]", file_path)
+            # os.remove(file_path)
+            # pass
+        else:
+            data.append(experiment_data)
     return data
 
 def save_to_csv(data, output_file):

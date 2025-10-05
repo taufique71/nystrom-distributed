@@ -7,17 +7,17 @@
 ##SBATCH --gpus-per-task=1 # https://docs.nersc.gov/performance/readiness/#controlling-task-and-gpu-binding
 #SBATCH -A m4293 # Sparsitute project (A Mathematical Institute for Sparse Computations in Science and Engineering)
 
-#SBATCH -t 0:10:00
+#SBATCH -t 0:20:00
 
-#SBATCH -N 1
+#SBATCH -N 128
 #SBATCH -J nystrom
 #SBATCH -o slurm.nystrom.o%j
 
 # https://docs.nersc.gov/systems/perlmutter/architecture/
 #SYSTEM=perlmutter-cpu
-SYSTEM=perlmutter-gpu-cpu
-#SYSTEM=perlmutter-gpu
-N_NODE=1
+#SYSTEM=perlmutter-gpu-cpu
+SYSTEM=perlmutter-gpu
+N_NODE=${SLURM_NNODES}
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
 	# https://docs.nersc.gov/systems/perlmutter/architecture/#cpu-nodes
@@ -62,7 +62,7 @@ export MKL_NUM_THREADS=$THREAD_PER_PROC
 N=50000
 #N=50037
 R=500
-N_TRY=1
+N_TRY=10
 
 MATMUL1_P1=$N_PROC
 MATMUL1_P2=1
@@ -72,119 +72,141 @@ MATMUL2_P1=$N_PROC
 MATMUL2_P2=1
 MATMUL2_P3=1
 
-#for ALG in nystrom-1d-noredist-1d nystrom-1d-redist-1d
-#for ALG in nystrom-1d-noredist-1d
-#for ALG in nystrom-1d-redist-1d
-for ALG in nystrom-2d-redist-1d-redundant
+for R in 500 5000
+#for R in 500
+#for R in 5000
 do
-    #for IMPL in cpp python
-    for IMPL in cpp
-    #for IMPL in python 
-    do
-        echo $ALG, $IMPL
-        if [ "$ALG" = "nystrom-1d-noredist-1d" ]; then
-            MATMUL1_P1=$N_PROC
-            MATMUL1_P2=1
-            MATMUL1_P3=1
+    for ALG in nystrom-1d-noredist-1d nystrom-1d-redist-1d nystrom-2d-noredist-1d
+    #for ALG in nystrom-1d-noredist-1d
+    #for ALG in nystrom-1d-redist-1d
+    #for ALG in nystrom-2d-noredist-1d
+	do
+		#for IMPL in cpp python
+		for IMPL in cpp
+		#for IMPL in python 
+		do
+			echo $ALG, $IMPL
+			if [ "$ALG" = "nystrom-1d-noredist-1d" ]; then
+				MATMUL1_P1=$N_PROC
+				MATMUL1_P2=1
+				MATMUL1_P3=1
 
-            MATMUL2_P1=$N_PROC
-            MATMUL2_P2=1
-            MATMUL2_P3=1
-        elif [ "$ALG" = "nystrom-1d-redist-1d" ]; then
-            MATMUL1_P1=$N_PROC
-            MATMUL1_P2=1
-            MATMUL1_P3=1
+				MATMUL2_P1=$N_PROC
+				MATMUL2_P2=1
+				MATMUL2_P3=1
+			elif [ "$ALG" = "nystrom-1d-redist-1d" ]; then
+				MATMUL1_P1=$N_PROC
+				MATMUL1_P2=1
+				MATMUL1_P3=1
 
-            MATMUL2_P1=1
-            MATMUL2_P2=1
-            MATMUL2_P3=$N_PROC
-        elif [[ $ALG == nystrom-2d-redist-1d-* ]]; then
-            # https://stackoverflow.com/questions/2172352/in-bash-how-can-i-check-if-a-string-begins-with-some-value
-            # Use these setting for all variants of 2d-1d
-            if [ "$N_PROC" -eq 4 ]; then
-                MATMUL1_P1=2
-                MATMUL1_P2=2
-                MATMUL1_P3=1
+				MATMUL2_P1=1
+				MATMUL2_P2=1
+				MATMUL2_P3=$N_PROC
+			elif [ "$ALG" = "nystrom-2d-noredist-1d" ]; then
+				# https://stackoverflow.com/questions/2172352/in-bash-how-can-i-check-if-a-string-begins-with-some-value
+				# Use these setting for all variants of 2d-1d
+				if [ "$N_PROC" -eq 4 ]; then
+					MATMUL1_P1=2
+					MATMUL1_P2=2
+					MATMUL1_P3=1
 
-                MATMUL2_P1=1
-                MATMUL2_P2=$N_PROC
-                MATMUL2_P3=1
-            elif [ "$N_PROC" -eq 8 ]; then
-                MATMUL1_P1=4
-                MATMUL1_P2=2
-                MATMUL1_P3=1
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				elif [ "$N_PROC" -eq 8 ]; then
+					MATMUL1_P1=4
+					MATMUL1_P2=2
+					MATMUL1_P3=1
 
-                MATMUL2_P1=1
-                MATMUL2_P2=$N_PROC
-                MATMUL2_P3=1
-            elif [ "$N_PROC" -eq 16 ]; then
-                MATMUL1_P1=4
-                MATMUL1_P2=4
-                MATMUL1_P3=1
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				elif [ "$N_PROC" -eq 16 ]; then
+					MATMUL1_P1=4
+					MATMUL1_P2=4
+					MATMUL1_P3=1
 
-                MATMUL2_P1=1
-                MATMUL2_P2=$N_PROC
-                MATMUL2_P3=1
-            elif [ "$N_PROC" -eq 32 ]; then
-                MATMUL1_P1=8
-                MATMUL1_P2=4
-                MATMUL1_P3=1
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				elif [ "$N_PROC" -eq 32 ]; then
+					MATMUL1_P1=8
+					MATMUL1_P2=4
+					MATMUL1_P3=1
 
-                MATMUL2_P1=1
-                MATMUL2_P2=$N_PROC
-                MATMUL2_P3=1
-            elif [ "$N_PROC" -eq 64 ]; then
-                MATMUL1_P1=8
-                MATMUL1_P2=8
-                MATMUL1_P3=1
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				elif [ "$N_PROC" -eq 64 ]; then
+					MATMUL1_P1=8
+					MATMUL1_P2=8
+					MATMUL1_P3=1
 
-                MATMUL2_P1=1
-                MATMUL2_P2=$N_PROC
-                MATMUL2_P3=1
-            elif [ "$N_PROC" -eq 128 ]; then
-                MATMUL1_P1=16
-                MATMUL1_P2=8
-                MATMUL1_P3=1
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				elif [ "$N_PROC" -eq 128 ]; then
+					MATMUL1_P1=16
+					MATMUL1_P2=8
+					MATMUL1_P3=1
 
-                MATMUL2_P1=1
-                MATMUL2_P2=$N_PROC
-                MATMUL2_P3=1
-            fi
-        fi
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				elif [ "$N_PROC" -eq 256 ]; then
+					MATMUL1_P1=16
+					MATMUL1_P2=16
+					MATMUL1_P3=1
 
-        if [ "$SYSTEM" == "perlmutter-cpu" ]; then
-            PY=$HOME/Codes/nystrom-distributed/nystrom.py
-            BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/nystrom
-        elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
-            PY=$HOME/Codes/nystrom-distributed/nystrom.py
-            BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/nystrom
-        elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
-            PY=$HOME/Codes/nystrom-distributed/nystrom.py
-            BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/nystrom
-        fi
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				elif [ "$N_PROC" -eq 512 ]; then
+					MATMUL1_P1=32
+					MATMUL1_P2=16
+					MATMUL1_P3=1
 
-		for TRY in $(seq 1 $N_TRY); do
-			#echo "Value: $TRY"
-			STDOUT_FILE=$SCRATCH/nystrom/nystrom_benchmarking/"$ALG"_"$IMPL"_"$SYSTEM"_"$N_NODE"_"$N_PROC"_"$THREAD_PER_PROC"_"$N"_"$R"_"$MATMUL1_P1"x"$MATMUL1_P2"x"$MATMUL1_P3"_"$MATMUL2_P1"x"$MATMUL2_P2"x"$MATMUL2_P3.$TRY"
-			echo $STDOUT_FILE
-
-			if [ "$IMPL" == "cpp" ]; then
-				srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
-					$BIN -n $N -r $R -alg $ALG \
-					-matmul1p1 $MATMUL1_P1 -matmul1p2 $MATMUL1_P2 -matmul1p3 $MATMUL1_P3  \
-					-matmul2p1 $MATMUL2_P1 -matmul2p2 $MATMUL2_P2 -matmul2p3 $MATMUL2_P3  \
-					&> $STDOUT_FILE
-				#srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
-					#check-hybrid.gnu.pm | sort -k4,4n -k6,6n &> blah.txt
-			elif [ "$IMPL" == "python" ]; then
-				#echo "Not ready" &> $STDOUT_FILE
-				srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
-					python $PY -n $N -r $R -alg $ALG \
-					-matmul1p1 $MATMUL1_P1 -matmul1p2 $MATMUL1_P2 -matmul1p3 $MATMUL1_P3  \
-					-matmul2p1 $MATMUL2_P1 -matmul2p2 $MATMUL2_P2 -matmul2p3 $MATMUL2_P3  \
-					&> $STDOUT_FILE
+					MATMUL2_P1=1
+					MATMUL2_P2=$N_PROC
+					MATMUL2_P3=1
+				fi
 			fi
+
+			if [ "$SYSTEM" == "perlmutter-cpu" ]; then
+				PY=$HOME/Codes/nystrom-distributed/nystrom.py
+				BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/nystrom
+			elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
+				PY=$HOME/Codes/nystrom-distributed/nystrom.py
+				BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/nystrom
+			elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
+				PY=$HOME/Codes/nystrom-distributed/nystrom.py
+				BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/nystrom
+			fi
+
+			for TRY in $(seq 1 $N_TRY); do
+				#echo "Value: $TRY"
+				STDOUT_FILE=$SCRATCH/nystrom/nystrom_benchmarking/"$ALG"_"$IMPL"_"$SYSTEM"_"$N_NODE"_"$N_PROC"_"$THREAD_PER_PROC"_"$N"_"$R"_"$MATMUL1_P1"x"$MATMUL1_P2"x"$MATMUL1_P3"_"$MATMUL2_P1"x"$MATMUL2_P2"x"$MATMUL2_P3.$TRY"
+				echo $STDOUT_FILE
+
+				if [ "$IMPL" == "cpp" ]; then
+					srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
+						$BIN -n $N -r $R -alg $ALG \
+						-matmul1p1 $MATMUL1_P1 -matmul1p2 $MATMUL1_P2 -matmul1p3 $MATMUL1_P3  \
+						-matmul2p1 $MATMUL2_P1 -matmul2p2 $MATMUL2_P2 -matmul2p3 $MATMUL2_P3  \
+						&> $STDOUT_FILE
+					#srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
+						#check-hybrid.gnu.pm | sort -k4,4n -k6,6n &> blah.txt
+				elif [ "$IMPL" == "python" ]; then
+					#echo "Not ready" &> $STDOUT_FILE
+					srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
+						python $PY -n $N -r $R -alg $ALG \
+						-matmul1p1 $MATMUL1_P1 -matmul1p2 $MATMUL1_P2 -matmul1p3 $MATMUL1_P3  \
+						-matmul2p1 $MATMUL2_P1 -matmul2p2 $MATMUL2_P2 -matmul2p3 $MATMUL2_P3  \
+						&> $STDOUT_FILE
+				fi
+			done
+			
 		done
-        
-    done
+	done
+
 done

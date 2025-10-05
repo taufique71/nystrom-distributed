@@ -7,9 +7,9 @@
 
 #SBATCH -A m4293 # Sparsitute project (A Mathematical Institute for Sparse Computations in Science and Engineering)
 
-#SBATCH -t 0:10:00
+#SBATCH -t 0:05:00
 
-#SBATCH -N 128
+#SBATCH -N 1
 #SBATCH -J matmul
 #SBATCH -o slurm.matmul.o%j
 
@@ -63,7 +63,7 @@ P2=1
 P3=1
 N1=50000
 N2=50000
-N3=5000
+N3=500
 
 #for ALG in matmul
 for ALG in matmul1gen matmul1comm 
