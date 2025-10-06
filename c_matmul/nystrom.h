@@ -106,8 +106,9 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #ifdef USE_CUBLAS
         CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&Omega), sizeof(double) * (n * r) ) );
         curandGenerator_t gen = NULL;
-        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
-        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        curandRngType_t rng = CURAND_RNG_PSEUDO_PHILOX4_32_10; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
         const unsigned long long offset = 0ULL;
         const unsigned long long seed = 1234ULL;
 
@@ -118,11 +119,40 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         CURAND_CHECK(curandGenerateUniformDouble(gen, Omega, n * r ));
         CUDA_CHECK(cudaDeviceSynchronize());
 #else
-        Omega = new double[n * r]; // Allocate for received B matrix
-        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        size_t arraySize = n * r;
+        Omega = new double[arraySize]; // Allocate for received B matrix
+        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
 
-        for (size_t i = 0; i < n * r; ++i) {
-            Omega[i] = prng.nextDouble();
+        //for (size_t i = 0; i < n * r; ++i) {
+            //Omega[i] = prng.nextDouble();
+        //}
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+
+            /* each thread creates its own stream */
+            VSLStreamStatePtr thr_stream;
+            unsigned int thr_seed = 1234 + tid;   // different seed per thread
+            vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
+
+            /* decide how many numbers this thread will produce */
+            size_t per_thr = arraySize / omp_get_num_threads();
+            size_t local_arraySize;
+
+            if(tid == omp_get_num_threads()-1 ){
+                local_arraySize = arraySize - per_thr * tid;
+            }
+            else{
+                local_arraySize = per_thr; 
+            }
+
+            vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD,
+                         thr_stream,
+                         local_arraySize,
+                         Omega + tid * per_thr,
+                         0.0, 1.0);
+
+            vslDeleteStream(&thr_stream);
         }
 #endif
 #ifdef BARRIER
@@ -363,8 +393,10 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #ifdef USE_CUBLAS
         CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&Omega), sizeof(double) * (n * r) ) );
         curandGenerator_t gen = NULL;
-        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
-        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        //curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_PHILOX4_32_10; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
         const unsigned long long offset = 0ULL;
         const unsigned long long seed = 1234ULL;
 
@@ -375,11 +407,40 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         CURAND_CHECK(curandGenerateUniformDouble(gen, Omega, n * r ));
         CUDA_CHECK(cudaDeviceSynchronize());
 #else
-        Omega = new double[n * r]; // Allocate for received B matrix
-        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        size_t arraySize = n * r;
+        Omega = new double[arraySize]; // Allocate for received B matrix
+        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
 
-        for (size_t i = 0; i < n * r; ++i) {
-            Omega[i] = prng.nextDouble();
+        //for (size_t i = 0; i < n * r; ++i) {
+            //Omega[i] = prng.nextDouble();
+        //}
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+
+            /* each thread creates its own stream */
+            VSLStreamStatePtr thr_stream;
+            unsigned int thr_seed = 1234 + tid;   // different seed per thread
+            vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
+
+            /* decide how many numbers this thread will produce */
+            size_t per_thr = arraySize / omp_get_num_threads();
+            size_t local_arraySize;
+
+            if(tid == omp_get_num_threads()-1 ){
+                local_arraySize = arraySize - per_thr * tid;
+            }
+            else{
+                local_arraySize = per_thr; 
+            }
+
+            vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD,
+                         thr_stream,
+                         local_arraySize,
+                         Omega + tid * per_thr,
+                         0.0, 1.0);
+
+            vslDeleteStream(&thr_stream);
         }
 #endif
 #ifdef BARRIER
@@ -720,8 +781,10 @@ void nystrom_2d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #ifdef USE_CUBLAS
         CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&Omega), sizeof(double) * (n * r) ) );
         curandGenerator_t gen = NULL;
-        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
-        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        //curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_PHILOX4_32_10; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
         const unsigned long long offset = 0ULL;
         const unsigned long long seed = 1234ULL;
 
@@ -732,11 +795,40 @@ void nystrom_2d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         CURAND_CHECK(curandGenerateUniformDouble(gen, Omega, n * r ));
         CUDA_CHECK(cudaDeviceSynchronize());
 #else
-        Omega = new double[n * r]; // Allocate for received B matrix
-        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        size_t arraySize = n * r;
+        Omega = new double[arraySize]; // Allocate for received B matrix
+        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
 
-        for (size_t i = 0; i < n * r; ++i) {
-            Omega[i] = prng.nextDouble();
+        //for (size_t i = 0; i < n * r; ++i) {
+            //Omega[i] = prng.nextDouble();
+        //}
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+
+            /* each thread creates its own stream */
+            VSLStreamStatePtr thr_stream;
+            unsigned int thr_seed = 1234 + tid;   // different seed per thread
+            vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
+
+            /* decide how many numbers this thread will produce */
+            size_t per_thr = arraySize / omp_get_num_threads();
+            size_t local_arraySize;
+
+            if(tid == omp_get_num_threads()-1 ){
+                local_arraySize = arraySize - per_thr * tid;
+            }
+            else{
+                local_arraySize = per_thr; 
+            }
+
+            vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD,
+                         thr_stream,
+                         local_arraySize,
+                         Omega + tid * per_thr,
+                         0.0, 1.0);
+
+            vslDeleteStream(&thr_stream);
         }
 #endif
 #ifdef BARRIER

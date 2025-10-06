@@ -14,6 +14,7 @@ int main(int argc, char* argv[]) {
     int p1 = 0, p2 = 0, p3 = 0;
     int n1 = 0, n2 = 0, n3 = 0;
     std::string alg;
+    std::string file = "NONE";
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
@@ -46,6 +47,10 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc) {
                 alg = argv[++i]; // Store the string value
             }
+        } else if (arg == "-file" || arg == "--file") { 
+            if (i + 1 < argc) {
+                file = argv[++i]; // Store the string value
+            }
         }
     }
 
@@ -73,7 +78,8 @@ int main(int argc, char* argv[]) {
     //grid.printInfo();
     
     ParMat A(n1, n2, grid, 'A');
-    A.generate();
+    if(file == "NONE") A.generate();
+    else A.parallelReadBinary(file, MPI_COMM_WORLD);
     //A.printLocalMatrix();
     
     //MPI_Barrier(MPI_COMM_WORLD);

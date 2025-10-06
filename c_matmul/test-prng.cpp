@@ -79,21 +79,39 @@ private:
 int main() {
     double start, end;
 
-	//const size_t arraySize = 10000000; // 10 million
-	const size_t arraySize = 50000*5000; 
+	//size_t arraySize = 10000000; // 10 million
+	size_t arraySize = 50000*5000; 
 	double* randomNumbers = new double[arraySize];
+
+
     //uint64_t* randomNumbers = new uint64_t[arraySize];
 
-    // Initialize the PRNG with two seeds
-    Xoroshiro128Plus prng(123456789, 987654321);
 
     start = omp_get_wtime();
+#pragma omp parallel
+	{
+		int tid = omp_get_thread_num();
 
-    for (size_t i = 0; i < arraySize; ++i) {
-        randomNumbers[i] = prng.nextDouble();
-        //randomNumbers[i] = prng.next();
-        //std::cout << randomNumbers[i] << std::endl;
-    }
+        // Initialize the PRNG with two seeds
+        Xoroshiro128Plus prng(123456789+tid, 987654321+tid);
+
+		/* decide how many numbers this thread will produce */
+		size_t per_thr = arraySize / omp_get_num_threads();
+        size_t local_arraySize;
+
+        if(tid == omp_get_num_threads()-1 ){
+            local_arraySize = arraySize - per_thr * tid;
+        }
+        else{
+            local_arraySize = per_thr; 
+        }
+
+        for (size_t i = 0; i < local_arraySize; ++i) {
+            randomNumbers[per_thr * tid + i] = prng.nextDouble();
+            //randomNumbers[i] = prng.next();
+            //std::cout << randomNumbers[i] << std::endl;
+        }
+	}
 
     end = omp_get_wtime();
 
@@ -122,8 +140,9 @@ int main() {
 	cudaStream_t stream = NULL;
 	curandGenerator_t gen = NULL;
 	//curandRngType_t rng = CURAND_RNG_PSEUDO_MRG32K3A; // Fastest according to: https://developer.nvidia.com/curand
-	curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
-	curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+    //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+    curandRngType_t rng = CURAND_RNG_PSEUDO_PHILOX4_32_10; 
+	curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
 
 	const unsigned long long offset = 0ULL;
 	const unsigned long long seed = 1234ULL;
@@ -156,6 +175,7 @@ int main() {
 	t8 = omp_get_wtime();
     CURAND_CHECK(curandGenerateUniformDouble(gen, d_data, arraySize));
 	t9 = omp_get_wtime();
+    CUDA_CHECK(cudaDeviceSynchronize());
 	//CUDA_CHECK(cudaMemcpyAsync(h_data, d_data,
 							 //sizeof(data_type) * arraySize,
 							 //cudaMemcpyDeviceToHost, stream));
@@ -188,6 +208,39 @@ int main() {
     std::cout << "\tTime to copy data from gpu to cpu: " << t10-t9 << std::endl;
     std::cout << "\tTime to sync stream: " << t11-t10 << std::endl;
     std::cout << "\tTime to free memory: " << t12-t11 << std::endl;
+#else
+    start = omp_get_wtime();
+#pragma omp parallel
+	{
+		int tid = omp_get_thread_num();
+
+		/* each thread creates its own stream */
+		VSLStreamStatePtr thr_stream;
+		unsigned int thr_seed = 1234 + tid;   // different seed per thread
+		vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
+
+		/* decide how many numbers this thread will produce */
+		size_t per_thr = arraySize / omp_get_num_threads();
+        size_t local_arraySize;
+
+        if(tid == omp_get_num_threads()-1 ){
+            local_arraySize = arraySize - per_thr * tid;
+        }
+        else{
+            local_arraySize = per_thr; 
+        }
+
+		vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD,
+					 thr_stream,
+					 local_arraySize,
+					 randomNumbers + tid * per_thr,
+					 0.0, 1.0);
+
+		vslDeleteStream(&thr_stream);
+	}
+    end = omp_get_wtime();
+
+    std::cout << "Time taken to fill the array of " << arraySize << " with CPU: " << end-start << " seconds" << std::endl;
 #endif
 
 	size_t idx;

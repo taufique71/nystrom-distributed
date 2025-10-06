@@ -226,46 +226,44 @@ public:
         }
 #endif
     }
-void parallelReadBinary(
-    std::string path,
-    MPI_Comm world)
-{
-    // Local sizes, global sizes, and starts
-    int lsizes[2]  = {nRowLocal, nColLocal};
-    int gsizes[2]  = {nRowGlobal, nColGlobal};
-    int starts[2]  = {localRowStart, localColStart};
 
-    MPI_File fh;
-    // Open file collectively
-    MPI_File_open(world, path.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fh);
+    void parallelReadBinary(std::string path, MPI_Comm world){
+        // Local sizes, global sizes, and starts
+        int lsizes[2]  = {nRowLocal, nColLocal};
+        int gsizes[2]  = {nRowGlobal, nColGlobal};
+        int starts[2]  = {localRowStart, localColStart};
 
-    MPI_Datatype view;
-    // Define subarray view (row-major)
-    MPI_Type_create_subarray(
-        2,            // dimensions
-        gsizes,       // global array shape
-        lsizes,       // local block shape
-        starts,       // starting indices
-        MPI_ORDER_C,  // row-major
-        MPI_DOUBLE,   // base type
-        &view
-    );
-    MPI_Type_commit(&view);
+        MPI_File fh;
+        // Open file collectively
+        MPI_File_open(world, path.c_str(), MPI_MODE_RDONLY, MPI_INFO_NULL, &fh);
 
-    MPI_Offset disp = 0;  // offset in bytes
-    MPI_File_set_view(fh, disp, MPI_DOUBLE, view, "native", MPI_INFO_NULL);
+        MPI_Datatype view;
+        // Define subarray view (row-major)
+        MPI_Type_create_subarray(
+            2,            // dimensions
+            gsizes,       // global array shape
+            lsizes,       // local block shape
+            starts,       // starting indices
+            MPI_ORDER_C,  // row-major
+            MPI_DOUBLE,   // base type
+            &view
+        );
+        MPI_Type_commit(&view);
 
-    // Allocate buffer for local block (contiguous)
-    // std::vector<double> buf(nRowLocal * nColLocal);
+        MPI_Offset disp = 0;  // offset in bytes
+        MPI_File_set_view(fh, disp, MPI_DOUBLE, view, "native", MPI_INFO_NULL);
 
-    // Collective read: each process gets its block
-    MPI_File_read_all(fh, localMat, nRowLocal * nColLocal, MPI_DOUBLE, MPI_STATUS_IGNORE);
+        // Allocate buffer for local block (contiguous)
+        // std::vector<double> buf(nRowLocal * nColLocal);
 
-    MPI_File_close(&fh);
-    MPI_Type_free(&view);
+        // Collective read: each process gets its block
+        MPI_File_read_all(fh, localMat, nRowLocal * nColLocal, MPI_DOUBLE, MPI_STATUS_IGNORE);
 
-    // return buf;  
-}
+        MPI_File_close(&fh);
+        MPI_Type_free(&view);
+
+        // return buf;  
+    }
 
 
 
@@ -585,8 +583,10 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
 #ifdef USE_CUBLAS
         CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&recvB), sizeof(double) * (B.nRowLocal * B.nColGlobal) ) );
         curandGenerator_t gen = NULL;
-        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
-        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        //curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_PHILOX4_32_10; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
         const unsigned long long offset = 0ULL;
         const unsigned long long seed = 1234ULL;
 
@@ -597,11 +597,35 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
         CURAND_CHECK(curandGenerateUniformDouble(gen, recvB, B.nRowGlobal * B.nColGlobal ));
         CUDA_CHECK(cudaDeviceSynchronize());
 #else
-        recvB = new double[B.nRowGlobal * B.nColGlobal]; // Allocate for received B matrix
-        Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        size_t arraySize = B.nRowGlobal * B.nColGlobal;
+        recvB = new double[arraySize]; // Allocate for received B matrix
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
 
-        for (size_t i = 0; i < B.nRowGlobal * B.nColGlobal; ++i) {
-            recvB[i] = prng.nextDouble();
+            /* each thread creates its own stream */
+            VSLStreamStatePtr thr_stream;
+            unsigned int thr_seed = 1234 + tid;   // different seed per thread
+            vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
+
+            /* decide how many numbers this thread will produce */
+            size_t per_thr = arraySize / omp_get_num_threads();
+            size_t local_arraySize;
+
+            if(tid == omp_get_num_threads()-1 ){
+                local_arraySize = arraySize - per_thr * tid;
+            }
+            else{
+                local_arraySize = per_thr; 
+            }
+
+            vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD,
+                         thr_stream,
+                         local_arraySize,
+                         recvB + tid * per_thr,
+                         0.0, 1.0);
+
+            vslDeleteStream(&thr_stream);
         }
 #endif
         t1 = MPI_Wtime();
@@ -718,8 +742,10 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
         t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         curandGenerator_t gen = NULL;
-        curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
-        curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        //curandOrdering_t order = CURAND_ORDERING_PSEUDO_SEEDED;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_PHILOX4_32_10; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
         const unsigned long long offset = 0ULL;
         //const unsigned long long seed = 1234ULL;
         const unsigned long long seed = static_cast<unsigned long long>(myrank);
@@ -732,10 +758,39 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
         CUDA_CHECK(cudaDeviceSynchronize());
 #else
         //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
-        Xoroshiro128Plus prng(myrank, myrank); // Defined in prng.cpp
+        //Xoroshiro128Plus prng(myrank, myrank); // Defined in prng.cpp
 
-        for (size_t i = 0; i < B.nRowLocal * B.nColLocal; ++i) {
-            B.localMat[i] = prng.nextDouble();
+        //for (size_t i = 0; i < B.nRowLocal * B.nColLocal; ++i) {
+            //B.localMat[i] = prng.nextDouble();
+        //}
+        size_t arraySize = B.nRowLocal * B.nColLocal;
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+
+            /* each thread creates its own stream */
+            VSLStreamStatePtr thr_stream;
+            unsigned int thr_seed = (myrank * 100000) + tid;   // different seed per thread
+            vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
+
+            /* decide how many numbers this thread will produce */
+            size_t per_thr = arraySize / omp_get_num_threads();
+            size_t local_arraySize;
+
+            if(tid == omp_get_num_threads()-1 ){
+                local_arraySize = arraySize - per_thr * tid;
+            }
+            else{
+                local_arraySize = per_thr; 
+            }
+
+            vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD,
+                         thr_stream,
+                         local_arraySize,
+                         B.localMat + tid * per_thr,
+                         0.0, 1.0);
+
+            vslDeleteStream(&thr_stream);
         }
 #endif
         t1 = MPI_Wtime();
