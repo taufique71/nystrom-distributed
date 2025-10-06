@@ -74,6 +74,8 @@ def parse_experiment_file(file_path):
         'reduce_scatter_time': float(reduce_scatter_time.group(1)) if reduce_scatter_time else 0,
         'reduce_scatter_1_time': float(reduce_scatter_1_time.group(1)) if reduce_scatter_1_time else 0,
         'reduce_scatter_2_time': float(reduce_scatter_2_time.group(1)) if reduce_scatter_2_time else 0,
+        'unpack_time': float(unpack_time.group(1)) if unpack_time else 0,
+        'pack_time': float(pack_time.group(1)) if pack_time else 0,
     }
 
 def collect_experiment_data(directory):
