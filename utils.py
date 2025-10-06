@@ -231,3 +231,53 @@ def getCIFAR10GramMatrix(path, world, n, nRowLocal, nColLocal, localRowStart, lo
 
     return localdata
 
+def writeCIFAR10GramMatrix(path, world, n, nRowLocal, nColLocal, localRowStart, localColStart, localdata):
+
+    lsizes = [nRowLocal, nColLocal]     # local block size
+    gsizes = [n, n]                     # global matrix size
+    starts = [localRowStart, localColStart]  # starting indices for this process
+
+    # Open file collectively for writing (create if doesn't exist, overwrite)
+    fh = MPI.File.Open(world, path, MPI.MODE_WRONLY | MPI.MODE_CREATE)
+
+    base_type = MPI.DOUBLE
+
+    # Define subarray view for this process
+    view = base_type.Create_subarray(
+        sizes=gsizes,
+        subsizes=lsizes,
+        starts=starts,
+        # order=MPI.ORDER_FORTRAN 
+    )
+    view.Commit()
+
+    disp = 0  # byte displacement at file start
+    fh.Set_view(disp, filetype=view)
+
+    # Ensure the buffer is contiguous
+    buf = np.ascontiguousarray(localdata, dtype=np.float64)
+
+    # Collective write: all processes write their sub-blocks in parallel
+    fh.Write_all(buf)
+
+    # Clean up
+    fh.Close()
+    view.Free()
+
+
+def compare_bin_matrices(file1, file2, shape=(20, 20), dtype=np.float64):
+    # Read both binary files
+    a = np.fromfile(file1, dtype=dtype).reshape(shape)
+    b = np.fromfile(file2, dtype=dtype).reshape(shape)
+
+    # Check exact or near-equality
+    if np.array_equal(a, b):
+        print("Matrices are identical.")
+    else:
+        print("Matrices differ.")
+    # print("File content p0", a[:3,:3])
+    # print("File content p1", a[:3,10:13])
+    # print("File content p2", a[10:13,0:3])
+    # print("File content p3", a[10:13,10:13])
+
+

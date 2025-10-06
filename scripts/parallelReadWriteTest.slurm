@@ -14,10 +14,6 @@
 
 module load mpi/intel/2021.10.0
 conda activate /home/rahmm224/Summer2025Env
-PY="/deac/csc/ballardGrp/rahmm224/new_nystrom/nystrom-distributed/CIFAR10bianry.py"
-path="./data"
-kernel="linear"
-sigma=100
-python $PY -path $path -kernel $kernel -sigma $sigma
-
+mpiexec -n 4 python "/deac/csc/ballardGrp/rahmm224/new_nystrom/nystrom-distributed/parallelReadWrite.py"
+# mpiexec -n 2 python $PY
 conda deactivate

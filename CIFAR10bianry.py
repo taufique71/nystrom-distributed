@@ -26,9 +26,17 @@ elif args.kernel == "rbf":
     sq_dists = X_norm + X_norm.T - 2 * A_Mat @ A_Mat.T
     sq_dists = -1 * sq_dists
     A_Mat = np.exp(sq_dists/(2*sigma*sigma))
-
-data = A_Mat.flatten().astype(np.float64)
-
+    
+data = A_Mat.flatten(order='F').astype(np.float64)
 with open(args.path+"/cifar10-"+args.kernel+".bin", "wb") as f:
+    # then write matrix values
+    data.tofile(f)
+
+# A_Mat=np.arange(1,17).reshape(4,4)
+# data = A_Mat.flatten(order='F').astype(np.float64)
+# print(f"A MAt{A_Mat}")
+# print(f"data {data}")
+
+with open(args.path+"/sample-"+args.kernel+".bin", "wb") as f:
     # then write matrix values
     data.tofile(f)

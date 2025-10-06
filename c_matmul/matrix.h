@@ -244,7 +244,7 @@ public:
             gsizes,       // global array shape
             lsizes,       // local block shape
             starts,       // starting indices
-            MPI_ORDER_C,  // row-major
+            MPI_ORDER_FORTRAN,  // col-major
             MPI_DOUBLE,   // base type
             &view
         );
@@ -264,6 +264,36 @@ public:
 
         // return buf;  
     }
+    void parallelWriteBinary(const std::string& path, MPI_Comm world) {
+        // Local sizes, global sizes, and starts
+        int lsizes[2]  = {nRowLocal, nColLocal};
+        int gsizes[2]  = {nRowGlobal, nColGlobal};
+        int starts[2]  = {localRowStart, localColStart};
+
+        MPI_File fh;
+        // Open file collectively (create or overwrite)
+        MPI_File_open(world, path.c_str(),
+                    MPI_MODE_CREATE | MPI_MODE_WRONLY,
+                    MPI_INFO_NULL, &fh);
+
+        MPI_Datatype view;
+        // Define subarray view (column-major / Fortran order)
+        MPI_Type_create_subarray(
+            2, gsizes, lsizes, starts,
+            MPI_ORDER_FORTRAN,  // important: must match read order
+            MPI_DOUBLE, &view);
+        MPI_Type_commit(&view);
+
+        MPI_Offset disp = 0;
+        MPI_File_set_view(fh, disp, MPI_DOUBLE, view, "native", MPI_INFO_NULL);
+
+        // Collective write: each process writes its local block
+        MPI_File_write_all(fh, localMat, nRowLocal * nColLocal, MPI_DOUBLE, MPI_STATUS_IGNORE);
+
+        MPI_Type_free(&view);
+        MPI_File_close(&fh);
+    }
+
 
 
 

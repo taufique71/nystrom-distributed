@@ -13,16 +13,19 @@ int main(int argc, char** argv) {
     int n = 4;
     std::vector<int> rowDistrib = {2, 2}; // each process row gets 2 rows
     std::vector<int> colDistrib = {2, 2}; // each process col gets 2 columns
-    std::string filePath = "/deac/csc/ballardGrp/rahmm224/testdata.bin";
+    std::string filePath = "/deac/csc/ballardGrp/rahmm224/new_nystrom/data/sample-linear.bin";
+    std::string writeFilePath = "/deac/csc/ballardGrp/rahmm224/new_nystrom/data/sample-written.bin";
 
     ParMat A(n, n, grid1, 'A', rowDistrib, colDistrib);
     A.parallelReadBinary(filePath, world);
-
+    std::cout<<"Rank "<<rank<<std::endl;
     for (size_t i = 0; i < 4; i++) {
     std::cout << A.localMat[i] << "\n";
 }
 
     std::cout << std::endl;
+
+    A.parallelWriteBinary(writeFilePath, world);
 
 
     MPI_Finalize();
