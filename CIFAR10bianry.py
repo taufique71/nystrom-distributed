@@ -37,6 +37,6 @@ with open(args.path+"/cifar10-"+args.kernel+".bin", "wb") as f:
 # print(f"A MAt{A_Mat}")
 # print(f"data {data}")
 
-with open(args.path+"/sample-"+args.kernel+".bin", "wb") as f:
-    # then write matrix values
-    data.tofile(f)
+# with open(args.path+"/sample-"+args.kernel+".bin", "wb") as f:
+#     # then write matrix values
+#     data.tofile(f)
