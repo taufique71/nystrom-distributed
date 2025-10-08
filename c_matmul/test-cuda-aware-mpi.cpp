@@ -54,11 +54,11 @@ int main(int argc, char* argv[]) {
 	int deviceCount;
 	cudaDeviceProp prop;
     cudaGetDeviceCount(&deviceCount);
-    if (deviceCount == 0) {
-        printf("myrank %d: No CUDA-capable GPU detected.\n", myrank);
-    } else {
-        printf("myrank %d: %d CUDA-capable GPU(s) detected.\n", myrank, deviceCount);
-    }
+    //if (deviceCount == 0) {
+        //printf("myrank %d: No CUDA-capable GPU detected.\n", myrank);
+    //} else {
+        //printf("myrank %d: %d CUDA-capable GPU(s) detected.\n", myrank, deviceCount);
+    //}
 #endif
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -83,13 +83,15 @@ int main(int argc, char* argv[]) {
 #ifdef USE_CUBLAS
     CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&sendbuf), sizeof(double) * (m*n) ));
     CUDA_CHECK(cudaMemcpy(sendbuf, sendbuf_h, sizeof(double) * (m*n), cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&recvbuf), sizeof(double) * (m * distrib[myrank]) ));
+    //CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&recvbuf), sizeof(double) * (m * distrib[myrank]) ));
+    CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&recvbuf), sizeof(double) * (m * n) ));
 #else
 	sendbuf = new double[ m * n ];
 	memcpy(sendbuf, sendbuf_h, sizeof(double) * m * n);
-	recvbuf = new double[ m * distrib[myrank] ];
+	//recvbuf = new double[ m * distrib[myrank] ];
+	recvbuf = new double[ m * n ];
 #endif
-	
+	MPI_Barrier(MPI_COMM_WORLD);
 	t0 = MPI_Wtime();
 	MPI_Reduce_scatter(sendbuf,
                        recvbuf,
@@ -97,11 +99,32 @@ int main(int argc, char* argv[]) {
                        MPI_DOUBLE,
                        MPI_SUM,
                        MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
 	t1 = MPI_Wtime();
 	double tReduceScatter = t1-t0;
 	double tReduceScatter_max;
 	MPI_Allreduce(&tReduceScatter, &tReduceScatter_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 	if(myrank == 0) printf("Time for reduce-scatter of %d elements: %lf\n", m*n, tReduceScatter_max);
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	t0 = MPI_Wtime();
+	MPI_Reduce(sendbuf, recvbuf, m * n, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
+	t1 = MPI_Wtime();
+	double tReduce = t1-t0;
+	double tReduce_max;
+	MPI_Allreduce(&tReduce, &tReduce_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	if(myrank == 0) printf("Time for reduce of %d elements: %lf\n", m*n, tReduce_max);
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	t0 = MPI_Wtime();
+	MPI_Allreduce(sendbuf, recvbuf, m * n, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
+	t1 = MPI_Wtime();
+	double tAllreduce = t1-t0;
+	double tAllreduce_max;
+	MPI_Allreduce(&tAllreduce, &tAllreduce_max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+	if(myrank == 0) printf("Time for Allreduce of %d elements: %lf\n", m*n, tAllreduce_max);
 
 #ifdef USE_CUBLAS
     CUDA_CHECK(cudaFree(sendbuf));
