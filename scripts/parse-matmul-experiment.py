@@ -1,11 +1,15 @@
 import os
 import re
 import pandas as pd
+from datetime import datetime
+
 
 def parse_experiment_file(file_path):
     filename = os.path.basename(file_path)
 
     parts = filename.split('_')
+    # print(parts)
+
     alg = parts[0]
     impl = parts[1]
     system = parts[2]
@@ -48,6 +52,7 @@ def parse_experiment_file(file_path):
     local_multiply_time = re.search(r'Time for local multiply:\s*([\d.]+) sec', content)
     cpu_gpu_data_move_time = re.search(r'Time for host-device mem movement:\s*([\d.]+) sec', content)
     scatter_reduce_time = re.search(r'Time to scatter and reduce C:\s*([\d.]+) sec', content)
+    timestamp = datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
 
     return {
         'alg': alg,
@@ -69,6 +74,7 @@ def parse_experiment_file(file_path):
         'local_multiply_time': float(local_multiply_time.group(1)) if local_multiply_time else 0,
         'cpu_gpu_data_move_time': float(cpu_gpu_data_move_time.group(1)) if cpu_gpu_data_move_time else 0,
         'scatter_reduce_time': float(scatter_reduce_time.group(1)) if scatter_reduce_time else 0,
+        'timestamp': timestamp
     }
 
 def collect_experiment_data(directory):
