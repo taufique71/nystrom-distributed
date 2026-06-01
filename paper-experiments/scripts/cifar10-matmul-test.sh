@@ -125,19 +125,22 @@ do
         echo $STDOUT_FILE
 
         if [ "$SYSTEM" == "perlmutter-cpu" ]; then
-            PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
-            BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/matmul
+            PY=$HOME/Codes/nystrom-distributed/paper-experiments/tests/matmul-test.py
+            BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_cpu_debug/c_matmul/matmul
         elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
-            PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
-            BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/matmul
+            PY=$HOME/Codes/nystrom-distributed/paper-experiments/tests/matmul-test.py
+            BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_gpu_debug/c_matmul/matmul
         elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
-            PY=$HOME/Codes/nystrom-distributed/tests/matmul-test.py
-            BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/matmul
+            PY=$HOME/Codes/nystrom-distributed/paper-experiments/tests/matmul-test.py
+            BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_cpu_debug/c_matmul/matmul
         fi
 
         if [ "$IMPL" == "cpp" ]; then
+			#srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
+				#$BIN -p1 $P1 -p2 $P2 -p3 $P3 -n1 $N1 -n2 $N2 -n3 $N3 -alg $ALG &> $STDOUT_FILE
 			srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
-				$BIN -p1 $P1 -p2 $P2 -p3 $P3 -n1 $N1 -n2 $N2 -n3 $N3 -alg $ALG &> $STDOUT_FILE
+				$BIN -p1 $P1 -p2 $P2 -p3 $P3 -n1 $N1 -n2 $N2 -n3 $N3 -alg $ALG \
+                -file /pscratch/sd/t/taufique/nystrom/dataset/cifar10-linear.bin
 			#srun -N $N_NODE -n $N_PROC -c $THREAD_PER_PROC --ntasks-per-node=$PROC_PER_NODE --cpu-bind=cores \
 				#check-hybrid.gnu.pm | sort -k4,4n -k6,6n &> blah.txt
         elif [ "$IMPL" == "python" ]; then

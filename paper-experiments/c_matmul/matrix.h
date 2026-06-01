@@ -33,7 +33,8 @@
         }                                                                          \
     } while (0)
 #else
-	#include <mkl.h>
+    #include <mkl.h>
+    //#include <cblas.h>
 #endif
 
 #include "procgrid.h"
@@ -118,9 +119,13 @@ public:
         //localMat.resize(nRowLocal*nColLocal);
         //localMat = (double *) malloc(nRowLocal * nColLocal * sizeof(double));
 #ifdef USE_CUBLAS
-        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&localMat), sizeof(double) * (nRowLocal * nColLocal)) );
+        CUDA_CHECK( cudaMalloc(reinterpret_cast<void **>(&localMat), sizeof(double) * ((size_t)nRowLocal * (size_t)nColLocal)) );
 #else
-        localMat = new double[nRowLocal * nColLocal];
+        //fprintf(stdout, "Allocating %lld doubles\n", nRowLocal * nColLocal);
+        //printf("(%d, %d, %d): %d, %d\n", this->grid.rankInRowWorld, this->grid.rankInColWorld, this->grid.rankInFibWorld, this->nRowLocal, this->nColLocal);
+        //std::cout << this->rankInRowWorld << "," this->nRowLocal << "," << this->nColLocal << std::endl;
+        localMat = new double[(size_t)nRowLocal * (size_t)nColLocal];
+        //printf("(%d, %d, %d): %d, %d\n", this->grid.rankInRowWorld, this->grid.rankInColWorld, this->grid.rankInFibWorld, this->nRowLocal, this->nColLocal);
 #endif
     }
 
@@ -227,6 +232,60 @@ public:
 #endif
     }
 
+    void generateRandom() {
+#ifdef USE_CUBLAS
+        curandGenerator_t gen = NULL;
+        //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
+        //curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
+        curandRngType_t rng = CURAND_RNG_PSEUDO_PHILOX4_32_10; 
+        curandOrdering_t order = CURAND_ORDERING_PSEUDO_DEFAULT;
+        const unsigned long long offset = 0ULL;
+        const unsigned long long seed = this->grid.myrank;
+
+        CURAND_CHECK(curandCreateGenerator(&gen, rng));
+        CURAND_CHECK(curandSetGeneratorOffset(gen, offset));
+        CURAND_CHECK(curandSetGeneratorOrdering(gen, order));
+        CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, seed));
+        CURAND_CHECK(curandGenerateUniformDouble(gen, this->localMat, this->nColLocal * this->nRowLocal ));
+        CUDA_CHECK(cudaDeviceSynchronize());
+#else
+        size_t arraySize = this->nColLocal * this->nRowLocal;
+        //Xoroshiro128Plus prng(123456789, 987654321);  Defined in prng.cpp
+
+        //for (size_t i = 0; i < arraySize; ++i) {
+            //this->localMat[i] = prng.nextDouble();
+        //}
+#pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+
+            // each thread creates its own stream
+            VSLStreamStatePtr thr_stream;
+            unsigned int thr_seed = this->grid.myrank * 9973 + tid;   // different seed per thread
+            vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
+
+            // decide how many numbers this thread will produce
+            size_t per_thr = arraySize / omp_get_num_threads();
+            size_t local_arraySize;
+
+            if(tid == omp_get_num_threads()-1 ){
+                local_arraySize = arraySize - per_thr * tid;
+            }
+            else{
+                local_arraySize = per_thr; 
+            }
+
+            vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD,
+                         thr_stream,
+                         local_arraySize,
+                         this->localMat + tid * per_thr,
+                         0.0, 1.0);
+
+            vslDeleteStream(&thr_stream);
+        }
+#endif
+    }
+
     void parallelReadBinary(std::string path, MPI_Comm world){
         // Local sizes, global sizes, and starts
         int lsizes[2]  = {nRowLocal, nColLocal};
@@ -293,9 +352,6 @@ public:
         MPI_Type_free(&view);
         MPI_File_close(&fh);
     }
-
-
-
 
     void printLocalMatrix() const {
         printf("Local Matrix (myrank %d, rowRank %d, colRank %d, fibRank %d): [ %d x %d ]\n", 
@@ -629,16 +685,21 @@ ParMat matmul1_gen(ParMat& A, ParMat& B, std::string generator){
 #else
         size_t arraySize = B.nRowGlobal * B.nColGlobal;
         recvB = new double[arraySize]; // Allocate for received B matrix
+        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+
+        //for (size_t i = 0; i < arraySize; ++i) {
+            //recvB[i] = prng.nextDouble();
+        //}
 #pragma omp parallel
         {
             int tid = omp_get_thread_num();
 
-            /* each thread creates its own stream */
+            // each thread creates its own stream
             VSLStreamStatePtr thr_stream;
             unsigned int thr_seed = 1234 + tid;   // different seed per thread
             vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
 
-            /* decide how many numbers this thread will produce */
+            // decide how many numbers this thread will produce
             size_t per_thr = arraySize / omp_get_num_threads();
             size_t local_arraySize;
 
@@ -787,7 +848,7 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
         CURAND_CHECK(curandGenerateUniformDouble(gen, B.localMat, (B.nRowLocal * B.nColLocal)));
         CUDA_CHECK(cudaDeviceSynchronize());
 #else
-        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
+        ////Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
         //Xoroshiro128Plus prng(myrank, myrank); // Defined in prng.cpp
 
         //for (size_t i = 0; i < B.nRowLocal * B.nColLocal; ++i) {
@@ -798,12 +859,12 @@ ParMat matmul1_comm(ParMat& A, ParMat& B, std::string generator){
         {
             int tid = omp_get_thread_num();
 
-            /* each thread creates its own stream */
+            // each thread creates its own stream
             VSLStreamStatePtr thr_stream;
             unsigned int thr_seed = (myrank * 100000) + tid;   // different seed per thread
             vslNewStream(&thr_stream, VSL_BRNG_PHILOX4X32X10, thr_seed);
 
-            /* decide how many numbers this thread will produce */
+            // decide how many numbers this thread will produce
             size_t per_thr = arraySize / omp_get_num_threads();
             size_t local_arraySize;
 

@@ -75,19 +75,16 @@ int main(int argc, char* argv[]) {
 
     // Create the process grid
     ProcGrid grid(p1, p2, p3);
-    //grid.printInfo();
-    
+
     ParMat A(n1, n2, grid, 'A');
     if(file == "NONE") A.generate();
     else A.parallelReadBinary(file, MPI_COMM_WORLD);
-    //A.printLocalMatrix();
-    
-    //MPI_Barrier(MPI_COMM_WORLD);
-    //if(myrank == 0) std::cout << "---" << std::endl;
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(myrank == 0) std::cout << "---" << std::endl;
 
     ParMat B(n2, n3, grid, 'B');
     B.generate();
-    //B.printLocalMatrix();
 
     if(alg == "matmul"){
         ParMat C = matmul(A, B);

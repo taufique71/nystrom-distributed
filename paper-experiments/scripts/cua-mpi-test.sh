@@ -60,11 +60,11 @@ export OMP_NUM_THREADS=$THREAD_PER_PROC
 export MKL_NUM_THREADS=$THREAD_PER_PROC
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
-	BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/test-cua-mpi
+	BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_cpu/c_matmul/test-cua-mpi
 elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
-	BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/test-cua-mpi
+	BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_cpu/c_matmul/test-cua-mpi
 elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
-	BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/test-cua-mpi
+	BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_gpu/c_matmul/test-cua-mpi
 fi
 
 STDOUT_FILE=$SCRATCH/nystrom/cua_mpi_test/reduce-scatter_"$SYSTEM"_"$N_NODE"_"$N_PROC"_5000

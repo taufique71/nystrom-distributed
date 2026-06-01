@@ -1,22 +1,24 @@
 #!/bin/bash -l
 
-#SBATCH -q regular 
+#SBATCH -q debug 
 ##SBATCH -C cpu
 #SBATCH -C gpu
 #SBATCH --gpus-per-node=4
+##SBATCH --ntasks-per-node=4
+##SBATCH -c 32
 ##SBATCH --gpus-per-task=1 # https://docs.nersc.gov/performance/readiness/#controlling-task-and-gpu-binding
 #SBATCH -A m4293 # Sparsitute project (A Mathematical Institute for Sparse Computations in Science and Engineering)
 
 #SBATCH -t 0:20:00
 
-#SBATCH -N 128
+#SBATCH -N 1
 #SBATCH -J nystrom
 #SBATCH -o slurm.nystrom.o%j
 
 # https://docs.nersc.gov/systems/perlmutter/architecture/
 #SYSTEM=perlmutter-cpu
-#SYSTEM=perlmutter-gpu-cpu
-SYSTEM=perlmutter-gpu
+SYSTEM=perlmutter-gpu-cpu
+#SYSTEM=perlmutter-gpu
 N_NODE=${SLURM_NNODES}
 
 if [ "$SYSTEM" == "perlmutter-cpu" ]; then
@@ -40,7 +42,8 @@ elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
 
 	CORE_PER_NODE=64 # 1 CPU, 64 cores per CPU. Never change. Specific to the system
 	PER_NODE_MEMORY=256 # Never change. Specific to the system
-	PROC_PER_NODE=4 # 1 process per GPU, 4 GPU per node
+    PROC_PER_NODE=4 # 1 process per GPU, 4 GPU per node
+    #PROC_PER_NODE=1 # 1 process per GPU, 4 GPU per node
 elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
 	# https://docs.nersc.gov/systems/perlmutter/architecture/#gpu-nodes
 
@@ -49,7 +52,8 @@ elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
 
 	CORE_PER_NODE=64 # 1 CPU, 64 cores per CPU. Never change. Specific to the system
 	PER_NODE_MEMORY=256 # Never change. Specific to the system
-	PROC_PER_NODE=4 # 1 process per GPU, 4 GPU per node
+    PROC_PER_NODE=4 # 1 process per GPU, 4 GPU per node
+	#PROC_PER_NODE=1 # 1 process per GPU, 4 GPU per node
 fi
 
 N_PROC=$(( $N_NODE * $PROC_PER_NODE ))
@@ -59,10 +63,11 @@ PER_PROC_MEM=$(( $PER_NODE_MEMORY / $PROC_PER_NODE - 2)) #2GB margin of error
 export OMP_NUM_THREADS=$THREAD_PER_PROC
 export MKL_NUM_THREADS=$THREAD_PER_PROC
 
-N=50000
-#N=50037
+#N=100000
+N=45000
+#N=50000
 R=500
-N_TRY=10
+N_TRY=1
 
 MATMUL1_P1=$N_PROC
 MATMUL1_P2=1
@@ -72,11 +77,12 @@ MATMUL2_P1=$N_PROC
 MATMUL2_P2=1
 MATMUL2_P3=1
 
-for R in 500 5000
+#for R in 500 5000
 #for R in 500
-#for R in 5000
+for R in 5000
 do
-    for ALG in nystrom-1d-noredist-1d nystrom-1d-redist-1d nystrom-2d-noredist-1d
+    #for ALG in nystrom-1d-noredist-1d nystrom-1d-redist-1d nystrom-2d-noredist-1d
+    for ALG in nystrom-1d-noredist-1d nystrom-1d-redist-1d 
     #for ALG in nystrom-1d-noredist-1d
     #for ALG in nystrom-1d-redist-1d
     #for ALG in nystrom-2d-noredist-1d
@@ -173,14 +179,14 @@ do
 			fi
 
 			if [ "$SYSTEM" == "perlmutter-cpu" ]; then
-				PY=$HOME/Codes/nystrom-distributed/nystrom.py
-				BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/nystrom
+				PY=$HOME/Codes/nystrom-distributed/paper-experiments/nystrom.py
+				BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_cpu/c_matmul/nystrom
 			elif [ "$SYSTEM" == "perlmutter-gpu" ]; then
-				PY=$HOME/Codes/nystrom-distributed/nystrom.py
-				BIN=$HOME/Codes/nystrom-distributed/build_gpu/c_matmul/nystrom
+				PY=$HOME/Codes/nystrom-distributed/paper-experiments/nystrom.py
+				BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_gpu/c_matmul/nystrom
 			elif [ "$SYSTEM" == "perlmutter-gpu-cpu" ]; then
-				PY=$HOME/Codes/nystrom-distributed/nystrom.py
-				BIN=$HOME/Codes/nystrom-distributed/build_cpu/c_matmul/nystrom
+				PY=$HOME/Codes/nystrom-distributed/paper-experiments/nystrom.py
+				BIN=$HOME/Codes/nystrom-distributed/paper-experiments/build_cpu/c_matmul/nystrom
 			fi
 
 			for TRY in $(seq 1 $N_TRY); do

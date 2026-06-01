@@ -41,7 +41,6 @@
 #endif
 
 #include "procgrid.h"
-#include "prng.h"
 #include "utils.h"
 
 extern "C" void unpack(double* x);
@@ -121,11 +120,6 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #else
         size_t arraySize = n * r;
         Omega = new double[arraySize]; // Allocate for received B matrix
-        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
-
-        //for (size_t i = 0; i < n * r; ++i) {
-            //Omega[i] = prng.nextDouble();
-        //}
 #pragma omp parallel
         {
             int tid = omp_get_thread_num();
@@ -325,7 +319,6 @@ void nystrom_1d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 	cublasDestroy(handle);
 #else
 	delete[] Omega;
-	//delete[] multC;
 	delete[] contribZ;
 #endif
     double tEnd = MPI_Wtime();
@@ -409,11 +402,6 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #else
         size_t arraySize = n * r;
         Omega = new double[arraySize]; // Allocate for received B matrix
-        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
-
-        //for (size_t i = 0; i < n * r; ++i) {
-            //Omega[i] = prng.nextDouble();
-        //}
 #pragma omp parallel
         {
             int tid = omp_get_thread_num();
@@ -684,6 +672,7 @@ void nystrom_1d_redist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
         cublasDgemm(handle, transA, transB, cblas_m, cblas_n, cblas_k,
                     &cblas_alpha, cblas_a, cblas_lda, cblas_b, cblas_ldb,
                     &cblas_beta, cblas_c, cblas_ldc);
+        CUDA_CHECK(cudaDeviceSynchronize());
 
 #else
 		cblas_dgemm(
@@ -797,11 +786,6 @@ void nystrom_2d_noredist_1d(ParMat &A, int r, ParMat &Y, ParMat &Z){
 #else
         size_t arraySize = n * r;
         Omega = new double[arraySize]; // Allocate for received B matrix
-        //Xoroshiro128Plus prng(123456789, 987654321); // Defined in prng.cpp
-
-        //for (size_t i = 0; i < n * r; ++i) {
-            //Omega[i] = prng.nextDouble();
-        //}
 #pragma omp parallel
         {
             int tid = omp_get_thread_num();

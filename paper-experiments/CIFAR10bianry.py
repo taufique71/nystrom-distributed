@@ -5,7 +5,7 @@ from torchvision.datasets import CIFAR10
 parser = argparse.ArgumentParser()
 parser.add_argument("-path", "--path", type=str, help="Path to save binary file", default="./data")
 parser.add_argument("-kernel", "--kernel", type=str, help="Kernel to generate gram matrix", default="rbf")
-parser.add_argument("-sigma", "--sigma", type=int, help="Standard deviation for RBF kernel", default=100)
+parser.add_argument("-sigma", "--sigma", type=int, help="Standard deviation for RBF kernel", default=1)
 
 args = parser.parse_args()
 
@@ -22,13 +22,17 @@ if args.kernel == "linear":
 elif args.kernel == "rbf":
     # A_Mat = np.random.randn(100, 1000)
     sigma = args.sigma
+    # sigma = 7576.0 
     X_norm = np.sum(A_Mat**2, axis=1).reshape(-1, 1)
     sq_dists = X_norm + X_norm.T - 2 * A_Mat @ A_Mat.T
     sq_dists = -1 * sq_dists
     A_Mat = np.exp(sq_dists/(2*sigma*sigma))
     
 data = A_Mat.flatten(order='F').astype(np.float64)
-with open(args.path+"/cifar10-"+args.kernel+".bin", "wb") as f:
+fname = args.path+"/cifar10-"+args.kernel+".bin"
+if args.kernel == "rbf":
+    fname = args.path+"/cifar10-"+args.kernel+"-sig"+str(int(sigma))+".bin"
+with open(fname, "wb") as f:
     # then write matrix values
     data.tofile(f)
 

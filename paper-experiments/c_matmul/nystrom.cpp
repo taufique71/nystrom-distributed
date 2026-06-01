@@ -26,6 +26,9 @@ int main(int argc, char* argv[]) {
     int matmul2p1 = 0, matmul2p2 = 0, matmul2p3 = 0;
     int n = 0, r = 0;
     std::string alg;
+    std::string afile = "NONE";
+    std::string yfile = "NONE";
+    std::string zfile = "NONE";
 
     // Parse command line arguments
     for (int i = 1; i < argc; ++i) {
@@ -66,6 +69,18 @@ int main(int argc, char* argv[]) {
             if (i + 1 < argc) {
                 alg = argv[++i]; // Store the string value
             }
+        } else if (arg == "-afile" || arg == "--afile") { 
+            if (i + 1 < argc) {
+                afile = argv[++i]; // Store the string value
+            }
+        } else if (arg == "-yfile" || arg == "--yfile") { 
+            if (i + 1 < argc) {
+                yfile = argv[++i]; // Store the string value
+            }
+        } else if (arg == "-zfile" || arg == "--zfile") { 
+            if (i + 1 < argc) {
+                zfile = argv[++i]; // Store the string value
+            }
         }
     }
 
@@ -105,12 +120,17 @@ int main(int argc, char* argv[]) {
         //grid.printInfo();
         
         ParMat A(n, n, grid1, 'A');
-        A.generate();
+        if(afile == "NONE") A.generate();
+        else A.parallelReadBinary(afile, MPI_COMM_WORLD);
+        //A.generate();
         //A.printLocalMatrix();
         
         ParMat Y(n, r, grid1, 'C');
         ParMat Z(r, r, grid1, 'B');
         nystrom_1d_noredist_1d(A, r, Y, Z);
+
+        if(yfile != "NONE") Y.parallelWriteBinary(yfile, MPI_COMM_WORLD);
+        if(zfile != "NONE") Z.parallelWriteBinary(zfile, MPI_COMM_WORLD);
     }
     else if (alg == "nystrom-1d-redist-1d") {
         // Create the process grid
@@ -122,11 +142,15 @@ int main(int argc, char* argv[]) {
         //std::vector<int> colDistrib(1, n);
         //ParMat A(n, n, grid1, 'A', rowDistrib, colDistrib);
 		ParMat A(n, n, grid1, 'A');
-		A.generate();
+        if(afile == "NONE") A.generate();
+        else A.parallelReadBinary(afile, MPI_COMM_WORLD);
         
         ParMat Y(n, r, grid2, 'B');
         ParMat Z(r, r, grid2, 'C');
 		nystrom_1d_redist_1d(A, r, Y, Z);
+
+        if(yfile != "NONE") Y.parallelWriteBinary(yfile, MPI_COMM_WORLD);
+        if(zfile != "NONE") Z.parallelWriteBinary(zfile, MPI_COMM_WORLD);
     }
     else if (alg == "nystrom-2d-noredist-1d") {
         // Create the process grid
@@ -145,6 +169,8 @@ int main(int argc, char* argv[]) {
 
         ParMat A(n, n, grid1, 'A', rowDistrib, colDistrib);
 		A.generate();
+        if(afile == "NONE") A.generate();
+        else A.parallelReadBinary(afile, MPI_COMM_WORLD);
         //A.printLocalMatrix();
 
         std::vector<int> rowDistribY(hieRowDistrib);
@@ -153,6 +179,9 @@ int main(int argc, char* argv[]) {
         //Y.printLocalMatrix();
         ParMat Z(r, r, grid2, 'C', colDistribY, colDistribY); 
         nystrom_2d_noredist_1d(A, r, Y, Z);
+
+        if(yfile != "NONE") Y.parallelWriteBinary(yfile, MPI_COMM_WORLD);
+        if(zfile != "NONE") Z.parallelWriteBinary(zfile, MPI_COMM_WORLD);
     }
 
     // Finalize MPI

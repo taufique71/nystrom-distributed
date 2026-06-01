@@ -2,8 +2,13 @@ build/
 build_cpu/
 build_gpu/
 __pycache__/
+.ipynb_checkpoints/
 blah.txt
 slurm.*
 logs/
-data/
 experiments/
+
+# Generated CIFAR-10 outputs and torchvision raw cache
+data/*.bin
+data/cifar-10-batches-py/
+data/cifar-10-python.tar.gz
