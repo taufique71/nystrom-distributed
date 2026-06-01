@@ -216,6 +216,22 @@ no separation needed.
 
 ---
 
+## SLATE matmul baseline
+
+`slate-matmul/` is a third-party-library baseline that runs SLATE's
+distributed DGEMM on the same matrix size and total MPI process count as
+`c_matmul/matmul`, to show that our implementation is competitive with a
+modern, expert-tuned dense linear algebra library. CPU-only,
+`perlmutter-gpu-cpu`. See `slate-matmul/README.md` for the full story:
+SLATE install, client build, slurm sweep, output format, parameter rationale
+with documentation pointers, and where the CSV lands.
+
+Parser: `scripts/parse-slate-experiment.py`. Output CSV is kept separate
+from `matmul-results.csv` because SLATE reports a single wallclock number
+whereas `c_matmul/matmul` decomposes its time into four phases.
+
+---
+
 ## Constraints for Working on This Codebase
 
 - Code runs on NERSC Perlmutter. Cannot be compiled or run in this container.
