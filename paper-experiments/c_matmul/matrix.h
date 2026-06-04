@@ -206,6 +206,8 @@ public:
     }
 
     void generate() {
+
+        double t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         // Generate in host memory and then copy to device memory
         // Alternative is to write a CUDA kernel to generate in GPU, which will be adopted if needed
@@ -230,9 +232,13 @@ public:
             }
         }
 #endif
+        double t1 = MPI_Wtime();
+        if(this->grid.myrank == 0) printf("Time to generate: %lf\n", t1-t0);
     }
 
     void generateRandom() {
+
+        double t0 = MPI_Wtime();
 #ifdef USE_CUBLAS
         curandGenerator_t gen = NULL;
         //curandRngType_t rng = CURAND_RNG_PSEUDO_XORWOW; 
@@ -284,6 +290,8 @@ public:
             vslDeleteStream(&thr_stream);
         }
 #endif
+        double t1 = MPI_Wtime();
+        if(this->grid.myrank == 0) printf("Time to generateRandom: %lf\n", t1-t0);
     }
 
     void parallelReadBinary(std::string path, MPI_Comm world){

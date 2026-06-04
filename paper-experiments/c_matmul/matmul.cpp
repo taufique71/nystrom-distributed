@@ -86,11 +86,12 @@ int main(int argc, char* argv[]) {
     if(myrank == 0) std::cout << "---" << std::endl;
 
     ParMat B(n2, n3, grid, 'B');
-    B.generate();
+    //B.generate();
+    B.generateRandom();
     //B.printLocalMatrix();
 
     if(alg == "matmul"){
-        //ParMat C = matmul(A, B);
+        ParMat C = matmul(A, B);
     }
     else if (alg == "matmul1gen") {
         ParMat C = matmul1_gen(A, B, "xoroshiro");

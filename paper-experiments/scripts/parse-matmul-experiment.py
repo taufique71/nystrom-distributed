@@ -47,7 +47,9 @@ def parse_experiment_file(file_path):
 
     # Extract timing information
     gather_a_time = re.search(r'Time to gather A:\s*([\d.]+) sec', content)
-    gen_b_time = re.search(r'Time to generate B:\s*([\d.]+) sec', content)
+    gen_a_time = re.search(r'Time to generate:\s*([\d.]+)', content)
+    gen_b_time = (re.search(r'Time to generate B:\s*([\d.]+) sec', content)
+                  or re.search(r'Time to generateRandom:\s*([\d.]+)', content))
     gather_b_time = re.search(r'Time to gather B:\s*([\d.]+) sec', content)
     local_multiply_time = re.search(r'Time for local multiply:\s*([\d.]+) sec', content)
     cpu_gpu_data_move_time = re.search(r'Time for host-device mem movement:\s*([\d.]+) sec', content)
@@ -69,7 +71,8 @@ def parse_experiment_file(file_path):
         'p2': p2,
         'p3': p3,
         'gather_a_time': float(gather_a_time.group(1)) if gather_a_time else 0,
-        'gen_b_time': float(gen_b_time.group(1)) if gen_b_time else 0,
+        'gen_a_time': float(gen_a_time.group(1)) if gen_a_time else -1,
+        'gen_b_time': float(gen_b_time.group(1)) if gen_b_time else -1,
         'gather_b_time': float(gather_b_time.group(1)) if gather_b_time else 0,
         'local_multiply_time': float(local_multiply_time.group(1)) if local_multiply_time else 0,
         'cpu_gpu_data_move_time': float(cpu_gpu_data_move_time.group(1)) if cpu_gpu_data_move_time else 0,
